@@ -646,11 +646,21 @@ void SplatEditor::makeToolbar(){
 			ImGui::RadioButton("Color", &editor->settings.rendermode, RENDERMODE_COLOR); ImGui::SameLine();
 			ImGui::RadioButton("Depth", &editor->settings.rendermode, RENDERMODE_DEPTH); ImGui::SameLine();
 			ImGui::RadioButton("Heat", &editor->settings.rendermode, RENDERMODE_HEATMAP); ImGui::SameLine();
+			ImGui::RadioButton("Core-Tail", &editor->settings.rendermode, RENDERMODE_CORETAIL); ImGui::SameLine();
 
 			ImGui::SetCursorPosX(cx);
 			ImGui::SetCursorPosY(cy + 24);
 			ImGui::SetNextItemWidth(100.0f);
 			ImGui::SliderFloat("splat size", &editor->settings.splatSize, 0.0f, 2.0f);
+			if(editor->settings.rendermode == RENDERMODE_CORETAIL){
+				ImGui::SetNextItemWidth(100.0f);
+				ImGui::SliderInt("Core K", &editor->settings.coreTailK, 1, 64);
+				ImGui::SetNextItemWidth(100.0f);
+				ImGui::SliderFloat("Core alpha", &editor->settings.coreTailCoreAlphaThreshold, 0.0f, 0.2f, "%.3f");
+				if(ImGui::IsItemHovered()){
+					ImGui::SetTooltip("Only fragments with alpha at or above this value occupy one of the Core K slots. Other fragments are accumulated in the OIT tail.");
+				}
+			}
 
 			// ImGui::SameLine();
 			ImGui::Text("Splat Renderer: "); ImGui::SameLine();

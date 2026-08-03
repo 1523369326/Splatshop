@@ -208,6 +208,8 @@ struct SplatEditor{
 		bool enableSplatCulling          = false;
 		bool disableFrustumCulling       = false;
 		bool cullSmallSplats             = true;
+		int coreTailK                    = 16;
+		float coreTailCoreAlphaThreshold = 0.05f;
 		bool requestDebugDump            = false;
 		bool enableOverlapped            = true;
 		int splatRenderer                = SPLATRENDERER_3DGS;

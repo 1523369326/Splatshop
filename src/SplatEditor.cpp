@@ -1434,6 +1434,8 @@ Uniforms SplatEditor::getUniforms(){
 	uniforms.sortEnabled              = settings.sort;
 	uniforms.splatSize                = settings.splatSize;
 	uniforms.cullSmallSplats          = settings.cullSmallSplats;
+	uniforms.coreTailK                = settings.coreTailK;
+	uniforms.coreTailCoreAlphaThreshold = settings.coreTailCoreAlphaThreshold;
 	uniforms.brushColorMode           = settings.brushColorMode;
 	uniforms.intersectionMode         = settings.intersectionMode;
 

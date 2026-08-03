@@ -1769,6 +1769,7 @@ void kernel_render_gaussians_perspectivecorrect(
 
 
 #include "./render/render_gaussians.cuh"
+#include "./render/render_gaussians_coretail.cuh"
 // #include "./render/render_gaussians_subsets.cuh"
 #include "./render/render_gaussians_solid.cuh"
 // #include "./render/render_gaussians_fetchfilter.cuh"

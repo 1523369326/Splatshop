@@ -45,6 +45,7 @@ constexpr int RENDERMODE_DEPTH = 1;
 constexpr int RENDERMODE_TILES = 2;
 constexpr int RENDERMODE_HEATMAP = 3;
 constexpr int RENDERMODE_PRIMITIVES = 4;
+constexpr int RENDERMODE_CORETAIL = 5;
 constexpr int RENDERMODE_COLOR_ASYNCMEM = 100;
 
 constexpr int INTERSECTION_APPROXIMATE = 0;
@@ -507,6 +508,8 @@ struct Uniforms{
 	float splatSize;
 	bool disableFrustumCulling;
 	bool cullSmallSplats;
+	int coreTailK;
+	float coreTailCoreAlphaThreshold;
 
 	struct {
 		bool show;

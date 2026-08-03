@@ -539,6 +539,9 @@ void drawsplats_3dgs_concurrent(
 			if(settings.rendermode == RENDERMODE_HEATMAP){
 				pointsInTileThreshold = 1'000'000;
 				editor->prog_gaussians_rendering->launch("kernel_render_heatmap", args_rendering, {.gridsize = numTiles, .blocksize = 256, .stream = target.sidestream});
+			}else if(settings.rendermode == RENDERMODE_CORETAIL){
+				pointsInTileThreshold = 1'000'000;
+				editor->prog_gaussians_rendering->launch("kernel_render_gaussians_coretail", args_rendering, {.gridsize = numTiles, .blocksize = 256, .stream = target.sidestream});
 			}else if(settings.showSolid){
 				pointsInTileThreshold = 1'000'000;
 				editor->prog_gaussians_rendering->launch("kernel_render_gaussians_solid", args_rendering, {.gridsize = numTiles, .blocksize = 256, .stream = target.sidestream});
@@ -1616,7 +1619,9 @@ void SplatEditor::draw(Scene* scene, vector<RenderTarget> targets){
 		// if(settings.intersectionMode && INTERSECTION_3DGS || settings.intersectionMode ==INTERSECTION_TIGHTBB){
 		// 	drawsplats_3dgs_concurrent_fragintersections(scene, concurrentTargets);
 		// }else 
-		if(settings.renderSoA){
+		if(settings.rendermode == RENDERMODE_CORETAIL){
+			drawsplats_3dgs_concurrent(scene, concurrentTargets);
+		}else if(settings.renderSoA){
 			drawsplats_3dgs_concurrent_soa(scene, concurrentTargets);
 		}else if(settings.renderBandwidth){
 			drawsplats_3dgs_concurrent_bandwidth(scene, concurrentTargets);
