@@ -4,6 +4,7 @@
 #include "actions/SpherePaintAction.h"
 #include "actions/RectSelectAction.h"
 #include "actions/ThreePointAlignAction.h"
+#include "actions/TwoPointMeasureAction.h"
 #include "actions/GizmoAction.h"
 
 
@@ -419,10 +420,18 @@ void SplatEditor::makeToolbar(){
 				// 	ImGui::SetTooltip("Selection Tool (Shortcut: 4)\nAlt: Deselect\nShift: Add to selection.");
 				// }
 			}
-			
-			ImGui::SameLine();
-			ImGui::Text("       ");
 
+			{ // TWO-POINT MEASURE
+				ImGui::SameLine();
+				ImGui::SetCursorPosX(cx + 1 * (buttonSize.x + padding));
+				if(ImGui::Button("Measure")){
+					shared_ptr<TwoPointMeasureAction> action = make_shared<TwoPointMeasureAction>();
+					editor->setAction(action);
+				}
+				if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)){
+					ImGui::SetTooltip("Two-point measurement: click two splat positions to show their distance.");
+				}
+			}
 			endSection();
 		}
 
