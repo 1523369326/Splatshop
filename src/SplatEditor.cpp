@@ -1438,6 +1438,8 @@ Uniforms SplatEditor::getUniforms(){
 	uniforms.coreTailCoreAlphaThreshold = settings.coreTailCoreAlphaThreshold;
 	uniforms.brushColorMode           = settings.brushColorMode;
 	uniforms.intersectionMode         = settings.intersectionMode;
+	uniforms.measurementDepthMode     = settings.measurementDepthMode;
+	uniforms.measurementTransmittanceThreshold = settings.measurementTransmittanceThreshold;
 
 	uniforms.inset.show               = settings.showInset;
 	uniforms.inset.start              = {16 * 60, 16 * 50};
@@ -1482,6 +1484,10 @@ CommonLaunchArgs SplatEditor::getCommonLaunchArgs(){
 	launchArgs.uniforms              = getUniforms();
 	launchArgs.state                 = (DeviceState*)cptr_state;
 	launchArgs.mouseEvents           = Runtime::mouseEvents;
+	if(settings.measurementProfilePixelLocked){
+		launchArgs.mouseEvents.pos_x = float(settings.measurementProfilePixelX);
+		launchArgs.mouseEvents.pos_y = float(settings.measurementProfilePixelY);
+	}
 	launchArgs.mouseEvents_prev      = mouse_prev;
 	launchArgs.keys                  = (Keys*)cptr_keys;
 	launchArgs.keyEvents             = keyEvents;
@@ -1717,6 +1723,7 @@ void SplatEditor::drawGUI() {
 	if(!settings.hideGUI){
 		makeMenubar();
 		makeToolbar();
+		makeMeasurementOverlay();
 		makeDevGUI();
 		makeEditingGUI();
 		makeColorCorrectionGui();
@@ -1776,6 +1783,7 @@ void SplatEditor::drawGUI() {
 				settings.hideGUI = !settings.hideGUI;
 			}
 		}
+
 		ImGui::End();
 		
 		ImGui::PopStyleColor(2);
@@ -1783,6 +1791,77 @@ void SplatEditor::drawGUI() {
 	}
 
 	
+}
+
+void SplatEditor::makeMeasurementOverlay(){
+	auto projectToScreen = [](vec3 point, ImVec2& screenPosition){
+		vec4 clipPosition = mat4(GLRenderer::camera->proj) * mat4(GLRenderer::camera->view) * vec4(point, 1.0f);
+		if(clipPosition.w <= 0.0f) return false;
+
+		vec3 ndc = vec3(clipPosition) / clipPosition.w;
+		screenPosition = {
+			(ndc.x * 0.5f + 0.5f) * GLRenderer::width,
+			(1.0f - (ndc.y * 0.5f + 0.5f)) * GLRenderer::height,
+		};
+		return true;
+	};
+
+	ImDrawList* overlayDrawList = ImGui::GetBackgroundDrawList();
+	ImU32 measurementColor = IM_COL32(255, 216, 0, 255);
+
+	for(size_t i = 0; i < measurements.size(); ){
+		auto measurement = measurements[i];
+		ImVec2 startScreen;
+		ImVec2 endScreen;
+		bool startVisible = projectToScreen(measurement.start, startScreen);
+		bool endVisible = projectToScreen(measurement.end, endScreen);
+		if(startVisible && endVisible){
+			overlayDrawList->AddLine(startScreen, endScreen, measurementColor, 1.5f);
+			overlayDrawList->AddCircleFilled(startScreen, 7.0f, measurementColor);
+			overlayDrawList->AddCircleFilled(endScreen, 7.0f, measurementColor);
+		}
+
+		vec3 midpoint = (measurement.start + measurement.end) * 0.5f;
+		vec4 clipPosition = mat4(GLRenderer::camera->proj) * mat4(GLRenderer::camera->view) * vec4(midpoint, 1.0f);
+
+		if(clipPosition.w <= 0.0f){
+			i++;
+			continue;
+		}
+
+		vec3 ndc = vec3(clipPosition) / clipPosition.w;
+		if(glm::abs(ndc.x) > 1.0f || glm::abs(ndc.y) > 1.0f){
+			i++;
+			continue;
+		}
+
+		ImVec2 position = {
+			(ndc.x * 0.5f + 0.5f) * GLRenderer::width,
+			(1.0f - (ndc.y * 0.5f + 0.5f)) * GLRenderer::height - 30.0f,
+		};
+
+		string windowName = format("Measurement Overlay##{}", i);
+		ImGui::SetNextWindowPos(position, ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+		ImGui::SetNextWindowBgAlpha(0.75f);
+		ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
+			ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+		bool shouldClose = false;
+		if(ImGui::Begin(windowName.c_str(), nullptr, flags)){
+			float distance = glm::length(measurement.end - measurement.start);
+			ImGui::Text("%.4f units", distance);
+			ImGui::SameLine();
+			shouldClose = ImGui::SmallButton("Close");
+		}
+		ImGui::End();
+
+		if(shouldClose){
+			measurements.erase(measurements.begin() + i);
+		}else{
+			i++;
+		}
+	}
 }
 
 CudaGlMappings SplatEditor::mapCudaGl(shared_ptr<GLTexture> source){

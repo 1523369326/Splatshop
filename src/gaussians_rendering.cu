@@ -642,8 +642,8 @@ void kernel_stageSplats(
 	float trace = a + d;
 	float traceOver2 = 0.5f * trace;
 	float term2 = sqrt(max(0.1f, traceOver2 * traceOver2 - D));
-	float eigenValue1 = traceOver2 + term2;
-	float eigenValue2 = traceOver2 - term2;
+	float eigenValue1 = traceOver2 + term2;		// λ₁
+	float eigenValue2 = traceOver2 - term2;		// λ₂
 
 	// eigenValue1 = max(eigenValue1, 0.1f);
 	// eigenValue2 = max(eigenValue2, 0.1f);

@@ -425,11 +425,41 @@ void SplatEditor::makeToolbar(){
 				ImGui::SameLine();
 				ImGui::SetCursorPosX(cx + 1 * (buttonSize.x + padding));
 				if(ImGui::Button("Measure")){
-					shared_ptr<TwoPointMeasureAction> action = make_shared<TwoPointMeasureAction>();
-					editor->setAction(action);
+					ImGui::OpenPopup("Measure settings");
 				}
 				if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)){
-					ImGui::SetTooltip("Two-point measurement: click two splat positions to show their distance.");
+					ImGui::SetTooltip("Configure depth picking, then start a two-point measurement.");
+				}
+
+				if(ImGui::BeginPopup("Measure settings")){
+					const char* depthModes[] = {
+						"First transmittance crossing",
+						"Weighted expected depth",
+						"Maximum-weight Gaussian depth",
+						"CDF/PDF multi-surface depth",
+					};
+					ImGui::TextUnformatted("Measurement depth");
+					ImGui::Combo("Depth mode", &settings.measurementDepthMode, depthModes, IM_ARRAYSIZE(depthModes));
+
+					if(settings.measurementDepthMode == 0){
+						ImGui::SliderFloat("T threshold", &settings.measurementTransmittanceThreshold, 0.001f, 1.0f, "T < %.3f", ImGuiSliderFlags_Logarithmic);
+						ImGui::TextUnformatted("Records the first Gaussian after transmittance falls below T.");
+					}else if(settings.measurementDepthMode == 1){
+						ImGui::TextUnformatted("Uses alpha-contribution-weighted depth.");
+					}else if(settings.measurementDepthMode == 2){
+						ImGui::TextUnformatted("Uses the depth of the Gaussian with the largest alpha contribution.");
+					}else{
+						ImGui::SliderFloat("PDF smoothing", &settings.measurementPdfBandwidthBins, 0.5f, 8.0f, "%.1f bins");
+						ImGui::TextUnformatted("Click a ray, then drag across its PDF to select a visible or behind-glass surface.");
+					}
+
+					ImGui::Separator();
+					if(ImGui::Button("Start measurement")){
+						shared_ptr<TwoPointMeasureAction> action = make_shared<TwoPointMeasureAction>();
+						editor->setAction(action);
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
 				}
 			}
 			endSection();

@@ -50,6 +50,11 @@ void kernel_render_gaussians_coretail(
 	vec3 tailColorSum = vec3{0.0f};
 	float tailAlphaSum = 0.0f;
 	float tailTransmittance = 1.0f;
+	float measurementDepth = __int_as_float(Infinity);
+	float measurementTransmittance = 1.0f;
+	float expectedDepthSum = 0.0f;
+	float expectedWeightSum = 0.0f;
+	float maxWeight = 0.0f;
 	int coreLimit = clamp(args.uniforms.coreTailK, 1, 64);
 	float coreAlphaThreshold = clamp(args.uniforms.coreTailCoreAlphaThreshold, 0.0f, 1.0f);
 
@@ -104,6 +109,34 @@ void kernel_render_gaussians_coretail(
 				float alpha = w * splatColor.a;
 				if(alpha < CORETTAIL_TAIL_ALPHA_THRESHOLD) continue;
 
+				float measurementWeight = measurementTransmittance * alpha;
+				if(args.uniforms.measurementDepthMode == 3 &&
+					pixel_x == int(args.mouseEvents.pos_x) && pixel_y == int(args.mouseEvents.pos_y)){
+					args.state->measurementProfile.pixelX = pixel_x;
+					args.state->measurementProfile.pixelY = pixel_y;
+					uint32_t sampleIndex = atomicAdd(&args.state->measurementProfile.count, 1u);
+					if(sampleIndex < MEASUREMENT_PROFILE_MAX_SAMPLES){
+						args.state->measurementProfile.samples[sampleIndex] = {
+							.depth = rasterdata.depth,
+							.weight = measurementWeight,
+						};
+					}else{
+						args.state->measurementProfile.overflow = 1;
+					}
+				}
+				if(args.uniforms.measurementDepthMode == 0){
+					if(measurementTransmittance * (1.0f - alpha) < args.uniforms.measurementTransmittanceThreshold && __float_as_uint(measurementDepth) == Infinity){
+						measurementDepth = rasterdata.depth;
+					}
+				}else if(args.uniforms.measurementDepthMode == 1){
+					expectedDepthSum += measurementWeight * rasterdata.depth;
+					expectedWeightSum += measurementWeight;
+				}else if((args.uniforms.measurementDepthMode == 2 || args.uniforms.measurementDepthMode == 3) && measurementWeight > maxWeight){
+					maxWeight = measurementWeight;
+					measurementDepth = rasterdata.depth;
+				}
+				measurementTransmittance *= 1.0f - alpha;
+
 				if(coreCount < coreLimit && alpha >= coreAlphaThreshold){
 					if(coreCount == 0){
 						firstCoreDepth = rasterdata.depth;
@@ -124,6 +157,13 @@ void kernel_render_gaussians_coretail(
 	}
 
 	if(!inside) return;
+
+	if(args.uniforms.measurementDepthMode == 1 && expectedWeightSum > 0.0f){
+		measurementDepth = expectedDepthSum / expectedWeightSum;
+	}
+	if(target.measurementDepth && measurementDepth < target.measurementDepth[pixelID]){
+		target.measurementDepth[pixelID] = measurementDepth;
+	}
 
 	float tailOpacity = 1.0f - tailTransmittance;
 	vec3 tailColor = tailAlphaSum > 0.0f ? tailColorSum / tailAlphaSum : vec3{0.0f};

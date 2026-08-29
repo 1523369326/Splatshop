@@ -1739,124 +1739,47 @@ extern "C" __global__
 void kernel_computeHoveredObject(CommonLaunchArgs args, RenderTarget target){
 
 	auto grid = cg::this_grid();
-	auto block = cg::this_thread_block();
+	if(grid.thread_rank() > 0) return;
 
-	// if(grid.thread_rank() > 0) return;
+	int px = clamp(args.mouseEvents.pos_x, 0.0f, target.width - 1.0f);
+	int py = clamp(args.mouseEvents.pos_y, 0.0f, target.height - 1.0f);
+	int pixelID = px + target.width * py;
 
-	if(grid.thread_rank() == 0)
-	{
-		int px = clamp(args.mouseEvents.pos_x, 0.0f, target.width - 1.0f);
-		int py = clamp(args.mouseEvents.pos_y, 0.0f, target.height - 1.0f);
+	uint64_t pixel = target.framebuffer[pixelID];
+	uint32_t framebufferDepthBits = pixel >> 32;
+	float depth = target.measurementDepth
+		? target.measurementDepth[pixelID]
+		: __int_as_float(framebufferDepthBits);
 
-		int pixelID = px + target.width * py;
-
-		uint64_t pixel = target.framebuffer[pixelID];
-		uint32_t udepth = pixel >> 32;
-		float depth = __int_as_float(udepth);
-		// vec3 origin = vec3(inverse(target.view) * vec4(0.0, 0.0, 0.0, 1.0));
-
-		uint64_t C = pixel & 0xffffffff;
-		uint8_t* rgba = (uint8_t*)&C;
-		vec4 color = {rgba[0], rgba[1], rgba[2], rgba[3]};
-
-		args.state->hovered_depth = depth;
-		args.state->hovered_color = color;
-
-		// hovered_pos from pixel coords and screen-space depth.
-		// (screen-space depth is "flat" and does not represent euclidean distance to fragment)
-		vec4 i_ndc = {
-			(2.0f * float(px) / target.width - 1.0f) * depth,
-			(2.0f * float(py) / target.height - 1.0f) * depth,
-			0.0f,
-			depth
-		};
-		vec4 i_viewpos = glm::inverse(target.proj) * i_ndc;
-		i_viewpos.w = 1.0f;
-		vec4 i_worldpos = glm::inverse(target.view) * i_viewpos;
-		args.state->hovered_pos = vec3(i_worldpos);
+	// Non-Gaussian geometry does not write measurementDepth, so retain the
+	// existing framebuffer depth as a fallback for those pixels.
+	if(__float_as_uint(depth) == Infinity){
+		depth = __int_as_float(framebufferDepthBits);
 	}
 
+	uint32_t colorBits = uint32_t(pixel);
+	uint8_t* rgba = (uint8_t*)&colorBits;
+	args.state->hovered_color = {rgba[0], rgba[1], rgba[2], rgba[3]};
 
-	__shared__ uint64_t sh_depths[512];
-	__shared__ uint32_t sh_count;
-	
-	if(grid.block_rank() == 0){
-
-		sh_count = 0;
-
-		int px = args.mouseEvents.pos_x;
-		int py = args.mouseEvents.pos_y;
-		int windowRadius = 8;
-		int windowWidth = 2 * windowRadius + 1;
-		int windowPixels = windowWidth * windowWidth;
-		ivec2 window_min = ivec2{px, py} - windowRadius;
-		ivec2 window_max = ivec2{px, py} + windowRadius;
-
-		int pixels_x = window_max.x - window_min.x + 1;
-		int pixels_y = window_max.y - window_min.y + 1;
-
-		block.sync();
-
-		// load pixel/depth values into shared memory
-		for(
-			int i = block.thread_rank();
-			i < windowPixels;
-			i += block.num_threads()
-		){
-
-			int ox = i % windowWidth - windowRadius;
-			int oy = i / windowWidth - windowRadius;
-
-			int pixel_x = px + ox;
-			int pixel_y = py + oy;
-			int pixelID = pixel_x + target.width * pixel_y;
-
-			if(pixel_x < 0 || pixel_x >= target.width) continue;
-			if(pixel_y < 0 || pixel_y >= target.height) continue;
-
-			uint64_t pixel = target.framebuffer[pixelID];
-			uint32_t udepth = pixel >> 32;
-			float depth = __int_as_float(udepth);
-
-			if(depth != Infinity && depth > 0.0f){
-				uint32_t index = atomicAdd(&sh_count, 1);
-				sh_depths[index] = pixel;
-			}
-		}
-
-		block.sync();
-
-		bubbleSort(&sh_depths[0], sh_count);
-
-		block.sync();
-
-		// take median
-		uint64_t pixel = sh_depths[sh_count / 2];
-		uint32_t udepth = pixel >> 32;
-		float depth = __int_as_float(udepth);
-
-		args.state->hovered_depth = depth;
-
-		// Our projection matrix is slightly unconventionall, but also easy to reverse because of that. 
-		// see GLRenderer.h - Camera::createProjectionMatrix()
-		// The projection is basically a dot product of viewPos and vec4(f/aspect, f, 0.0f, -1.0f),
-		// followed by the usual division of ndc.xy / ndc.w. In our case, ndc.w is the linear depth,
-		// so we can multiply ndc.xy by depth, and also enter -depth for the linear depth in view space along -z. 
-		vec4 i_viewpos = {
-			((2.0f * float(px) / target.width - 1.0f) * depth) / target.proj[0][0],
-			((2.0f * float(py) / target.height - 1.0f) * depth) / target.proj[1][1],
-			-depth,
-			1.0f
-		};
-		vec4 i_worldpos = glm::inverse(target.view) * i_viewpos;
-		args.state->hovered_pos = vec3(i_worldpos);
-
-		if(__float_as_uint(depth) == Infinity){
-			args.state->hovered_pos = {0.0f, 0.0f, 0.0f};
-		}
+	if(__float_as_uint(depth) == Infinity || !(depth > 0.0f)){
+		// DeviceState uses the numeric sentinel because host-side actions compare
+		// hovered_depth directly against the Infinity macro.
+		args.state->hovered_depth = Infinity;
+		args.state->hovered_pos = {0.0f, 0.0f, 0.0f};
+		return;
 	}
 
+	args.state->hovered_depth = depth;
 
+	// Reconstruct the selected position from the center pixel and its depth.
+	vec4 i_viewpos = {
+		((2.0f * float(px) / target.width - 1.0f) * depth) / target.proj[0][0],
+		((2.0f * float(py) / target.height - 1.0f) * depth) / target.proj[1][1],
+		-depth,
+		1.0f
+	};
+	vec4 i_worldpos = glm::inverse(target.view) * i_viewpos;
+	args.state->hovered_pos = vec3(i_worldpos);
 }
 
 

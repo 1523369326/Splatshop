@@ -448,6 +448,21 @@ struct DbgProfileTime{
 	uint64_t t_end;
 };
 
+constexpr uint32_t MEASUREMENT_PROFILE_MAX_SAMPLES = 512;
+
+struct MeasurementDepthSample{
+	float depth;
+	float weight;
+};
+
+struct MeasurementDepthProfile{
+	uint32_t count;
+	uint32_t overflow;
+	int pixelX;
+	int pixelY;
+	MeasurementDepthSample samples[MEASUREMENT_PROFILE_MAX_SAMPLES];
+};
+
 struct DeviceState{
 	int counter;
 
@@ -472,10 +487,13 @@ struct DeviceState{
 		uint32_t numAccepted;
 		uint32_t numRejected;
 	} dbg;
+
+	MeasurementDepthProfile measurementProfile;
 };
 
 struct RenderTarget{
 	uint64_t* framebuffer = nullptr;
+	float* measurementDepth = nullptr;
 	uint64_t* indexbuffer = nullptr;
 	int width;
 	int height;
@@ -510,6 +528,8 @@ struct Uniforms{
 	bool cullSmallSplats;
 	int coreTailK;
 	float coreTailCoreAlphaThreshold;
+	int measurementDepthMode;
+	float measurementTransmittanceThreshold;
 
 	struct {
 		bool show;

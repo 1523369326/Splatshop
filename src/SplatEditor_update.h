@@ -123,6 +123,7 @@ void SplatEditor::update(){
 	cuMemsetD32Async(cptr_state + offsetof(DeviceState, numSplatsInLargestTile), 0, 1, mainstream);
 	cuMemsetD32Async(cptr_state + offsetof(DeviceState, dbg.numAccepted), 0, 1, mainstream);
 	cuMemsetD32Async(cptr_state + offsetof(DeviceState, dbg.numRejected), 0, 1, mainstream);
+	cuMemsetD8Async(cptr_state + offsetof(DeviceState, measurementProfile), 0, sizeof(MeasurementDepthProfile), mainstream);
 	cuMemsetD32Async(cptr_numLines, 0, 1, mainstream);
 
 	if(tempSplats)

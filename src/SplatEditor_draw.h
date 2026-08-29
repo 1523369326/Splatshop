@@ -10,6 +10,7 @@ struct ConcurrentTarget{
 
 	shared_ptr<CudaVirtualMemory> virt_fb_depth;
 	shared_ptr<CudaVirtualMemory> virt_fb_color;
+	shared_ptr<CudaVirtualMemory> virt_measurementDepth;
 
 	CUdeviceptr cptr_numVisibleSplats;
 	CUdeviceptr cptr_numFragments;
@@ -1353,7 +1354,7 @@ void drawsplats_3dgs_concurrent_soa(
 }
 
 
-void SplatEditor::draw(Scene* scene, vector<RenderTarget> targets){
+void SplatEditor::draw(Scene* scene, vector<RenderTarget>& targets){
 
 	cuCtxSynchronize();
 
@@ -1400,6 +1401,7 @@ void SplatEditor::draw(Scene* scene, vector<RenderTarget> targets){
 		concurrent.cu_tilesComputed = cu_tilesComputed;
 		concurrent.virt_fb_depth = CURuntime::allocVirtual("fb_depth");
 		concurrent.virt_fb_color = CURuntime::allocVirtual("fb_color");
+		concurrent.virt_measurementDepth = CURuntime::allocVirtual("measurement_depth");
 
 		concurrent.cptr_numVisibleSplats           = CURuntime::alloc("numVisibleSplats", 8);
 		concurrent.cptr_numFragments               = CURuntime::alloc("numFragments", 8);
@@ -1422,6 +1424,8 @@ void SplatEditor::draw(Scene* scene, vector<RenderTarget> targets){
 	for(int i = 0; i < targets.size(); i++){
 
 		ConcurrentTarget concurrent = cache[i];
+		concurrent.virt_measurementDepth->commit(targets[i].width * targets[i].height * sizeof(float));
+		targets[i].measurementDepth = (float*)concurrent.virt_measurementDepth->cptr;
 		concurrent.target = targets[i];
 
 		concurrentTargets.push_back(concurrent);
@@ -1444,6 +1448,7 @@ void SplatEditor::draw(Scene* scene, vector<RenderTarget> targets){
 		CUstream sidestream = concurrent.sidestream;
 
 		prog_gaussians_rendering->launch("kernel_clearFramebuffer", {&launchArgs, &target}, target.width * target.height, mainstream);
+		cuMemsetD32Async((CUdeviceptr)target.measurementDepth, 0x7f800000, target.width * target.height, mainstream);
 
 		if(nodes.size() > 0)
 		{ // RENDER POINTS - HQ
@@ -1621,7 +1626,7 @@ void SplatEditor::draw(Scene* scene, vector<RenderTarget> targets){
 		// }else 
 		if(settings.rendermode == RENDERMODE_CORETAIL){
 			drawsplats_3dgs_concurrent(scene, concurrentTargets);
-		}else if(settings.renderSoA){
+		}else if(settings.renderSoA && settings.measurementDepthMode != 3){
 			drawsplats_3dgs_concurrent_soa(scene, concurrentTargets);
 		}else if(settings.renderBandwidth){
 			drawsplats_3dgs_concurrent_bandwidth(scene, concurrentTargets);

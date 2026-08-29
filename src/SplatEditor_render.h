@@ -277,7 +277,8 @@ void SplatEditor::render(){
 				target.proj = GLRenderer::camera->proj;
 				target.VP = GLRenderer::camera->VP;
 
-				draw(&scene, {target});
+				vector<RenderTarget> targets = {target};
+				draw(&scene, targets);
 
 				Rectangle viewport;
 				viewport.x = 0;
@@ -304,7 +305,8 @@ void SplatEditor::render(){
 				target.proj = GLRenderer::camera->proj;
 				target.VP = GLRenderer::camera->VP;
 
-				draw(&scene, {target});
+				vector<RenderTarget> targets = {target};
+				draw(&scene, targets);
 
 				Rectangle viewport;
 				viewport.x = GLRenderer::width / 2;
@@ -336,6 +338,7 @@ void SplatEditor::render(){
 			
 			vector<RenderTarget> targets = { target };
 			draw(&scene, targets);
+			target = targets[0];
 
 			prog_gaussians_editing->launch("kernel_computeHoveredObject", {&launchArgs, &target}, 256, mainstream);
 
@@ -478,6 +481,7 @@ void SplatEditor::render(){
 	}
 
 	cuMemcpyDtoHAsync(h_state_pinned, cptr_state, sizeof(DeviceState), mainstream);
+	cuStreamSynchronize(mainstream);
 	memcpy(&deviceState, h_state_pinned, sizeof(DeviceState));
 
 	Runtime::numSelectedSplats = deviceState.numSelectedSplats;

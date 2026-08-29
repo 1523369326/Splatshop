@@ -69,6 +69,11 @@ struct _DrawSphereArgs{
 	vec4 color = {0.0f, 1.0f, 0.0f, 1.0f};
 };
 
+struct TwoPointMeasurement{
+	vec3 start;
+	vec3 end;
+};
+
 struct CudaGlMappings{
 	std::vector<CUgraphicsResource> resources;
 	CUgraphicsResource resource;
@@ -215,6 +220,12 @@ struct SplatEditor{
 		int splatRenderer                = SPLATRENDERER_3DGS;
 		int intersectionMode             = INTERSECTION_APPROXIMATE;
 		int brushColorMode               = BRUSHCOLORMODE_NORMAL;
+		int measurementDepthMode         = 0;
+		float measurementTransmittanceThreshold = 0.5f;
+		float measurementPdfBandwidthBins = 2.0f;
+		bool measurementProfilePixelLocked = false;
+		int measurementProfilePixelX = 0;
+		int measurementProfilePixelY = 0;
 
 		Brush brush;
 		RectSelect rectselect;
@@ -258,6 +269,8 @@ struct SplatEditor{
 
 		shared_ptr<InputAction> currentAction = nullptr;
 	} state;
+
+	vector<TwoPointMeasurement> measurements;
 
 	struct {
 		bool menu_intersects = false;
@@ -383,6 +396,7 @@ struct SplatEditor{
 	void makeStats();
 	void makeTODOs();
 	void makeToolbar();
+	void makeMeasurementOverlay();
 	// void makeGuiVr();
 	void makeEditingGUI();
 	void makeDevGUI();
@@ -399,7 +413,7 @@ struct SplatEditor{
 	void update();
 	void render();
 	// void draw(Scene* scene, View view, RenderTarget& target);
-	void draw(Scene* scene, vector<RenderTarget> targets);
+	void draw(Scene* scene, vector<RenderTarget>& targets);
 	void postRenderStuff();
 
 };

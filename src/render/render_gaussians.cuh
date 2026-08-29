@@ -93,6 +93,10 @@ void kernel_render_gaussians(
 
 	vec4 pixel = vec4{0.0f, 0.0f, 0.0f, 0.0f};
 	float depth = Infinity;
+	float measurementDepth = __int_as_float(Infinity);
+	float expectedDepthSum = 0.0f;
+	float expectedWeightSum = 0.0f;
+	float maxWeight = 0.0f;
 	if(pixel_x < width && pixel_y < height){
 		depth = __int_as_float(target.framebuffer[pixelID] >> 32);
 	}
@@ -202,6 +206,20 @@ void kernel_render_gaussians(
 				}
 
 				float alpha = w * (1.0f - pixel.w) * splatColor.a;
+				if(args.uniforms.measurementDepthMode == 3 &&
+					pixel_x == int(args.mouseEvents.pos_x) && pixel_y == int(args.mouseEvents.pos_y)){
+					args.state->measurementProfile.pixelX = pixel_x;
+					args.state->measurementProfile.pixelY = pixel_y;
+					uint32_t sampleIndex = atomicAdd(&args.state->measurementProfile.count, 1u);
+					if(sampleIndex < MEASUREMENT_PROFILE_MAX_SAMPLES){
+						args.state->measurementProfile.samples[sampleIndex] = {
+							.depth = rasterdata.depth,
+							.weight = alpha,
+						};
+					}else{
+						args.state->measurementProfile.overflow = 1;
+					}
+				}
 
 				pixel.r += alpha * splatColor.r;
 				pixel.g += alpha * splatColor.g;
@@ -209,6 +227,20 @@ void kernel_render_gaussians(
 				pixel.w += alpha;
 
 				remainingTranslucency = 1.0f - pixel.w;
+
+				if(args.uniforms.measurementDepthMode == 0){
+					if(remainingTranslucency < args.uniforms.measurementTransmittanceThreshold && __float_as_uint(measurementDepth) == Infinity){
+						measurementDepth = rasterdata.depth;
+					}
+				}else if(args.uniforms.measurementDepthMode == 1){
+					expectedDepthSum += alpha * rasterdata.depth;
+					expectedWeightSum += alpha;
+				}else if(args.uniforms.measurementDepthMode == 2 || args.uniforms.measurementDepthMode == 3){
+					if(alpha > maxWeight){
+						maxWeight = alpha;
+						measurementDepth = rasterdata.depth;
+					}
+				}
 				
 				// update depth buffer
 				// if(remainingTranslucency < 8.0f / 255.0f)
@@ -247,6 +279,13 @@ void kernel_render_gaussians(
 
 	// Transfer colors from register "pixel" to global memory. 
 	if(pixel_x < width && pixel_y < height){
+		if(args.uniforms.measurementDepthMode == 1 && expectedWeightSum > 0.0f){
+			measurementDepth = expectedDepthSum / expectedWeightSum;
+		}
+		if(target.measurementDepth && measurementDepth < target.measurementDepth[pixelID]){
+			target.measurementDepth[pixelID] = measurementDepth;
+		}
+
 		uint32_t color = 0;
 		uint8_t* rgba = (uint8_t*)&color;
 
