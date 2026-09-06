@@ -215,6 +215,7 @@ struct SplatEditor{
 		bool cullSmallSplats             = true;
 		int coreTailK                    = 16;
 		float coreTailCoreAlphaThreshold = 0.05f;
+		float coreTailCoreOpacity         = 1.0f;
 		bool requestDebugDump            = false;
 		bool enableOverlapped            = true;
 		int splatRenderer                = SPLATRENDERER_3DGS;
@@ -222,6 +223,9 @@ struct SplatEditor{
 		int brushColorMode               = BRUSHCOLORMODE_NORMAL;
 		int measurementDepthMode         = 0;
 		float measurementTransmittanceThreshold = 0.5f;
+		// Enables the RaDe-GS ray-plane geometry pass (RGB / expected depth / normal).
+		bool enableRaDeGeometry          = false;
+		bool showRaDeGeometryPanel       = false;
 		float measurementPdfBandwidthBins = 2.0f;
 		bool measurementProfilePixelLocked = false;
 		int measurementProfilePixelX = 0;
@@ -396,6 +400,8 @@ struct SplatEditor{
 	void makeStats();
 	void makeTODOs();
 	void makeToolbar();
+	void makeCoreTailControls();
+	void makeRaDeGeometryControls();
 	void makeMeasurementOverlay();
 	// void makeGuiVr();
 	void makeEditingGUI();

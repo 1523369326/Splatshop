@@ -24,6 +24,9 @@ struct ConcurrentTarget{
 	shared_ptr<CudaVirtualMemory> virt_bounds;
 	shared_ptr<CudaVirtualMemory> virt_ordering_splatdepth;
 	shared_ptr<CudaVirtualMemory> virt_stagedata;
+	// Sort-free path: an unsorted linked list of fragment indices per tile.
+	shared_ptr<CudaVirtualMemory> virt_sortfree_tileHeads;
+	shared_ptr<CudaVirtualMemory> virt_sortfree_tileNext;
 
 	uint32_t numVisibleSplats;
 	uint32_t numFragments;
@@ -577,6 +580,173 @@ void drawsplats_3dgs_concurrent(
 		Runtime::timings.add("[draw splats (device)]", duration);
 	}
 	
+}
+
+void drawsplats_3dgs_concurrent_sortfree(
+	Scene* scene,
+	vector<ConcurrentTarget> targets
+){
+	// Sort-free rendering reuses the regular projection/SH baking stage, then
+	// skips both depth sorting and tile-ID sorting.  Instead it creates an
+	// atomic linked list of the already-unsorted fragments for each tile.
+	if(targets.empty()) return;
+
+	auto editor = SplatEditor::instance;
+
+	static CUevent event_start = 0;
+	static CUevent event_end = 0;
+	static bool initialized = false;
+	if(!initialized){
+		cuEventCreate(&event_start, CU_EVENT_DEFAULT);
+		cuEventCreate(&event_end, CU_EVENT_DEFAULT);
+		initialized = true;
+	}
+
+	double t_start = 0.0;
+	if(Runtime::measureTimings){
+		cuCtxSynchronize();
+		t_start = now();
+		cuEventRecord(event_start, targets[0].mainstream);
+	}
+
+	// Projection, SH -> RGB, opacity -> alpha, and fragment coverage are all
+	// performed by the existing staging kernel.  Its identity ordering output
+	// is deliberately ignored by this path.
+	for(auto& target : targets){
+		cuMemsetD32Async(target.cptr_numVisibleSplats, 0, 1, target.mainstream);
+		cuMemsetD32Async(target.cptr_numFragments, 0, 1, target.mainstream);
+
+		uint32_t numPotentiallyVisibleSplats = 0;
+		scene->process<SNSplats>([&](SNSplats* node){
+			if(!node->visible) return;
+			numPotentiallyVisibleSplats += node->dmng.data.count;
+		});
+
+		target.virt_stagedata->commit(sizeof(StageData) * numPotentiallyVisibleSplats);
+		target.virt_depth->commit(sizeof(float) * numPotentiallyVisibleSplats);
+		target.virt_ordering_splatdepth->commit(sizeof(uint32_t) * numPotentiallyVisibleSplats);
+		target.virt_numTilefragments_splatwise->commit(sizeof(uint32_t) * numPotentiallyVisibleSplats);
+
+		scene->process<SNSplats>([&](SNSplats* node){
+			if(!node->visible || node->dmng.data.count == 0) return;
+
+			node->dmng.data.transform = node->transform_global;
+			GaussianData data = node->dmng.data;
+			ColorCorrection colorCorrection;
+			if(node->selected) colorCorrection = editor->settings.colorCorrection;
+
+			void* args[] = {
+				&editor->launchArgs,
+				&target,
+				&colorCorrection,
+				&node->dmng.data,
+				&target.cptr_numVisibleSplats,
+				&target.cptr_numFragments,
+				&target.virt_numTilefragments_splatwise->cptr,
+				&target.virt_depth->cptr,
+				&target.virt_stagedata->cptr,
+				&target.virt_ordering_splatdepth->cptr,
+			};
+			editor->prog_gaussians_rendering->launch("kernel_stageSplats", args, data.count, target.mainstream);
+		});
+	}
+
+	// Resolve the compact staged count before allocating the fragment arrays.
+	for(auto& target : targets){
+		uint32_t numVisibleSplats = 0;
+		uint32_t numFragments = 0;
+		CURuntime::check(cuMemcpyDtoHAsync(&numVisibleSplats, target.cptr_numVisibleSplats, 4, target.mainstream));
+		CURuntime::check(cuMemcpyDtoHAsync(&numFragments, target.cptr_numFragments, 4, target.mainstream));
+		cuStreamSynchronize(target.mainstream);
+		cuStreamSynchronize(target.sidestream);
+
+		target.numVisibleSplats = numVisibleSplats;
+		target.numFragments = numFragments;
+		Runtime::numVisibleSplats += numVisibleSplats;
+		Runtime::numVisibleFragments += numFragments;
+		Runtime::debugValueList.push_back({"numSplats", format(getSaneLocale(), "{:L}", numVisibleSplats)});
+		Runtime::debugValueList.push_back({"numFragments", format(getSaneLocale(), "{:L}", numFragments)});
+	}
+
+	for(auto target : targets){
+		int width = target.target.width;
+		int height = target.target.height;
+		uint32_t numTiles = uint32_t((width + TILE_SIZE_3DGS - 1) / TILE_SIZE_3DGS) *
+			uint32_t((height + TILE_SIZE_3DGS - 1) / TILE_SIZE_3DGS);
+
+		target.virt_tileIDs->commit(sizeof(uint32_t) * target.numFragments);
+		target.virt_indices->commit(sizeof(uint32_t) * target.numFragments);
+		target.virt_sortfree_tileHeads->commit(sizeof(uint32_t) * numTiles);
+		if(target.numFragments > 0){
+			target.virt_sortfree_tileNext->commit(sizeof(uint32_t) * target.numFragments);
+		}
+
+		// Prefix sums provide write offsets only; they do not impose an order on
+		// the splats and therefore do not violate the sort-free path.
+		GPUPrefixSumsCS::dispatch(target.numVisibleSplats,
+			target.virt_numTilefragments_splatwise->cptr, target.mainstream);
+
+		if(target.numVisibleSplats > 0){
+			void* argsCreate[] = {
+				&editor->launchArgs,
+				&target,
+				&target.numVisibleSplats,
+				&target.virt_stagedata->cptr,
+				&target.virt_numTilefragments_splatwise->cptr,
+				&target.virt_tileIDs->cptr,
+				&target.virt_indices->cptr,
+			};
+			editor->prog_gaussians_rendering->launch(
+				"kernel_createTilefragmentArray_sortfree", argsCreate,
+				target.numVisibleSplats, target.mainstream);
+		}
+
+		cuMemsetD32Async(target.virt_sortfree_tileHeads->cptr,
+			SORTFREE_INVALID_FRAGMENT, numTiles, target.mainstream);
+		if(target.numFragments > 0){
+			void* argsBuild[] = {
+				&target.virt_tileIDs->cptr,
+				&target.virt_indices->cptr,
+				&target.numFragments,
+				&numTiles,
+				&target.virt_sortfree_tileHeads->cptr,
+				&target.virt_sortfree_tileNext->cptr,
+			};
+			editor->prog_gaussians_rendering->launch(
+				"kernel_build_sortfree_tile_lists", argsBuild,
+				target.numFragments, target.mainstream);
+
+			cuEventRecord(target.cu_tilesComputed, target.mainstream);
+			cuStreamWaitEvent(target.sidestream, target.cu_tilesComputed, 0);
+
+			void* argsRender[] = {
+				&editor->launchArgs,
+				&target.target,
+				&target.virt_sortfree_tileHeads->cptr,
+				&target.virt_sortfree_tileNext->cptr,
+				&target.virt_indices->cptr,
+				&target.virt_stagedata->cptr,
+				&target.numVisibleSplats,
+			};
+			editor->prog_gaussians_rendering->launch(
+				"kernel_render_gaussians_sortfree", argsRender,
+				{.gridsize = numTiles, .blocksize = 256, .stream = target.sidestream});
+		}
+	}
+
+	for(auto target : targets){
+		cuStreamSynchronize(target.mainstream);
+		cuStreamSynchronize(target.sidestream);
+	}
+
+	if(Runtime::measureTimings){
+		cuEventRecord(event_end, 0);
+		cuCtxSynchronize();
+		float duration = 0.0f;
+		cuEventElapsedTime(&duration, event_start, event_end);
+		Runtime::timings.add("[draw splats (host)]", (now() - t_start) * 1000.0f);
+		Runtime::timings.add("[draw splats (device)]", duration);
+	}
 }
 
 void drawsplats_3dgs_concurrent_bandwidth(
@@ -1415,6 +1585,8 @@ void SplatEditor::draw(Scene* scene, vector<RenderTarget>& targets){
 		concurrent.virt_ordering_splatdepth                = CURuntime::allocVirtual("sm1_ordering_splatdepth ");
 		concurrent.virt_numTilefragments_splatwise         = CURuntime::allocVirtual("sm1_numTilefragments_splatwise");
 		concurrent.virt_numTilefragments_splatwise_ordered = CURuntime::allocVirtual("sm1_numTilefragments_splatwise_ordered");
+		concurrent.virt_sortfree_tileHeads                = CURuntime::allocVirtual("sortfree_tile_heads");
+		concurrent.virt_sortfree_tileNext                 = CURuntime::allocVirtual("sortfree_tile_next");
 
 		cache.push_back(concurrent);
 	}
@@ -1619,7 +1791,19 @@ void SplatEditor::draw(Scene* scene, vector<RenderTarget>& targets){
 
 	cuCtxSynchronize();
 
-	if(settings.splatRenderer == SPLATRENDERER_3DGS){
+	// The RaDe-GS payload is produced and consumed by the standard staged 3DGS
+	// renderer. It intentionally bypasses optional renderers with incompatible
+	// StageData layouts.
+	if(settings.enableRaDeGeometry){
+		drawsplats_3dgs_concurrent(scene, concurrentTargets);
+
+	}else if(settings.splatRenderer == SPLATRENDERER_SORT_FREE){
+		// The sort-free renderer deliberately bypasses every GPUSorting stage.
+		// It reuses projection/staging, then builds an unsorted per-tile linked
+		// list and accumulates the fixed depth-weighted color in the rasterizer.
+		drawsplats_3dgs_concurrent_sortfree(scene, concurrentTargets);
+
+	}else if(settings.splatRenderer == SPLATRENDERER_3DGS){
 
 		// if(settings.intersectionMode && INTERSECTION_3DGS || settings.intersectionMode ==INTERSECTION_TIGHTBB){
 		// 	drawsplats_3dgs_concurrent_fragintersections(scene, concurrentTargets);

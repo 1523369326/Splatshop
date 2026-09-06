@@ -1430,16 +1430,19 @@ Uniforms SplatEditor::getUniforms(){
 	uniforms.showRing                 = settings.showRing;
 	uniforms.makePoints               = settings.makePoints;
 	uniforms.rendermode               = settings.rendermode;
+	uniforms.splatRenderer             = settings.splatRenderer;
 	uniforms.frontToBack              = settings.frontToBack;
 	uniforms.sortEnabled              = settings.sort;
 	uniforms.splatSize                = settings.splatSize;
 	uniforms.cullSmallSplats          = settings.cullSmallSplats;
 	uniforms.coreTailK                = settings.coreTailK;
 	uniforms.coreTailCoreAlphaThreshold = settings.coreTailCoreAlphaThreshold;
+	uniforms.coreTailCoreOpacity      = settings.coreTailCoreOpacity;
 	uniforms.brushColorMode           = settings.brushColorMode;
 	uniforms.intersectionMode         = settings.intersectionMode;
 	uniforms.measurementDepthMode     = settings.measurementDepthMode;
 	uniforms.measurementTransmittanceThreshold = settings.measurementTransmittanceThreshold;
+	uniforms.enableRaDeGeometry       = settings.enableRaDeGeometry;
 
 	uniforms.inset.show               = settings.showInset;
 	uniforms.inset.start              = {16 * 60, 16 * 50};
@@ -1723,6 +1726,8 @@ void SplatEditor::drawGUI() {
 	if(!settings.hideGUI){
 		makeMenubar();
 		makeToolbar();
+		makeCoreTailControls();
+		makeRaDeGeometryControls();
 		makeMeasurementOverlay();
 		makeDevGUI();
 		makeEditingGUI();

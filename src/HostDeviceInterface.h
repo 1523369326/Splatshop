@@ -46,6 +46,7 @@ constexpr int RENDERMODE_TILES = 2;
 constexpr int RENDERMODE_HEATMAP = 3;
 constexpr int RENDERMODE_PRIMITIVES = 4;
 constexpr int RENDERMODE_CORETAIL = 5;
+constexpr int RENDERMODE_NORMAL = 6;
 constexpr int RENDERMODE_COLOR_ASYNCMEM = 100;
 
 constexpr int INTERSECTION_APPROXIMATE = 0;
@@ -57,6 +58,12 @@ constexpr int BRUSHCOLORMODE_HUE_SATURATION = 1;
 
 constexpr int SPLATRENDERER_3DGS = 0;
 constexpr int SPLATRENDERER_PERSPECTIVE_CORRECT = 1;
+// Sort-free weighted-sum rasterization.  The path intentionally avoids all
+// depth/fragment sorting and uses these fixed, camera-depth weight constants.
+constexpr int SPLATRENDERER_SORT_FREE = 2;
+constexpr float SORTFREE_DEPTH_WEIGHT_SIGMA = 0.02f;
+constexpr float SORTFREE_DEPTH_WEIGHT_BETA = 1.0f;
+constexpr uint32_t SORTFREE_INVALID_FRAGMENT = 0xffffffffu;
 
 constexpr uint32_t FLAGS_SELECTED             = 1 <<  0;
 constexpr uint32_t FLAGS_HIGHLIGHTED          = 1 <<  1;
@@ -192,6 +199,10 @@ struct StageData {
 	uint32_t color;
 	uint32_t flags;
 	float depth;
+	// RaDe-GS geometry payload. rayPlane stores (px, py, tc), where tc is
+	// the camera-to-Gaussian-center distance in ray space.
+	glm::vec3 rayPlane;
+	glm::vec3 normal;
 
 	// // Padding to 64 byte
 	// float padding[10];
@@ -520,6 +531,7 @@ struct Uniforms{
 	int showRing;
 	int makePoints;
 	int rendermode;
+	int splatRenderer;
 	int brushColorMode;
 	int intersectionMode;
 	uint32_t fragmentCounter;
@@ -528,8 +540,10 @@ struct Uniforms{
 	bool cullSmallSplats;
 	int coreTailK;
 	float coreTailCoreAlphaThreshold;
+	float coreTailCoreOpacity;
 	int measurementDepthMode;
 	float measurementTransmittanceThreshold;
+	bool enableRaDeGeometry;
 
 	struct {
 		bool show;

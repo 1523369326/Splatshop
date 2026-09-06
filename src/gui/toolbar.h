@@ -687,6 +687,16 @@ void SplatEditor::makeToolbar(){
 			ImGui::RadioButton("Heat", &editor->settings.rendermode, RENDERMODE_HEATMAP); ImGui::SameLine();
 			ImGui::RadioButton("Core-Tail", &editor->settings.rendermode, RENDERMODE_CORETAIL); ImGui::SameLine();
 
+			if(ImGui::Checkbox("RaDe-GS geometry", &editor->settings.enableRaDeGeometry)){
+				editor->settings.showRaDeGeometryPanel = editor->settings.enableRaDeGeometry;
+				if(!editor->settings.enableRaDeGeometry && editor->settings.rendermode == RENDERMODE_NORMAL)
+					editor->settings.rendermode = RENDERMODE_COLOR;
+			}
+			if(editor->settings.enableRaDeGeometry){
+				ImGui::SameLine();
+				if(ImGui::SmallButton("Controls##rade")) editor->settings.showRaDeGeometryPanel = true;
+			}
+
 			ImGui::SetCursorPosX(cx);
 			ImGui::SetCursorPosY(cy + 24);
 			ImGui::SetNextItemWidth(100.0f);
@@ -695,7 +705,7 @@ void SplatEditor::makeToolbar(){
 				ImGui::SetNextItemWidth(100.0f);
 				ImGui::SliderInt("Core K", &editor->settings.coreTailK, 1, 64);
 				ImGui::SetNextItemWidth(100.0f);
-				ImGui::SliderFloat("Core alpha", &editor->settings.coreTailCoreAlphaThreshold, 0.0f, 0.2f, "%.3f");
+				ImGui::SliderFloat("Core alpha cutoff", &editor->settings.coreTailCoreAlphaThreshold, 0.0f, 0.2f, "%.3f");
 				if(ImGui::IsItemHovered()){
 					ImGui::SetTooltip("Only fragments with alpha at or above this value occupy one of the Core K slots. Other fragments are accumulated in the OIT tail.");
 				}
@@ -703,12 +713,17 @@ void SplatEditor::makeToolbar(){
 
 			// ImGui::SameLine();
 			ImGui::Text("Splat Renderer: "); ImGui::SameLine();
-			ImGui::RadioButton("3DGS", &editor->settings.splatRenderer, SPLATRENDERER_3DGS); ImGui::SameLine(); 
+			ImGui::RadioButton("3DGS", &editor->settings.splatRenderer, SPLATRENDERER_3DGS); ImGui::SameLine();
 			ImGui::RadioButton("Persp.Correct", &editor->settings.splatRenderer, SPLATRENDERER_PERSPECTIVE_CORRECT); ImGui::SameLine();
 			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)){
 				string str = "Render splats using 'Efficient Perspective-Correct 3D Gaussian Splatting Using Hybrid Transparency'\n";
 				str += "To be used with correspondingly trained splat models, not suitable with standard 3DGS-trained models. ";
 				ImGui::SetTooltip(str.c_str());
+			}
+			ImGui::RadioButton("Sort-free", &editor->settings.splatRenderer, SPLATRENDERER_SORT_FREE);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)){
+				ImGui::SetTooltip("Sort-free weighted-sum rasterization.\n"
+					"Skips depth and fragment sorting, then normalizes sum(color * alpha * exp(-sigma * depth^beta)) / sum(alpha * weight).");
 			}
 			
 
@@ -933,4 +948,46 @@ void SplatEditor::makeToolbar(){
 
 
 
+}
+
+// Compact, movable controls for the hybrid renderer. The opacity scale affects
+// only the K exact front-to-back blends; it intentionally leaves the OIT tail alone.
+void SplatEditor::makeCoreTailControls(){
+	if(settings.rendermode != RENDERMODE_CORETAIL) return;
+
+	ImGui::SetNextWindowPos(ImVec2(16.0f, 118.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowBgAlpha(0.88f);
+	ImGuiWindowFlags flags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse |
+		ImGuiWindowFlags_NoSavedSettings;
+
+	if(ImGui::Begin("Core-Tail Controls", nullptr, flags)){
+		ImGui::Text("Exact Core: first %d splats", settings.coreTailK);
+		ImGui::SetNextItemWidth(180.0f);
+		ImGui::SliderFloat("Core blend opacity", &settings.coreTailCoreOpacity, 0.0f, 1.0f, "%.2f");
+		if(ImGui::IsItemHovered()){
+			ImGui::SetTooltip("Scales alpha only for the first K exact front-to-back blends.\nThe approximate Tail keeps its original alpha.");
+		}
+		ImGui::TextDisabled("Tail blending is unchanged");
+	}
+	ImGui::End();
+}
+
+void SplatEditor::makeRaDeGeometryControls(){
+	if(!settings.enableRaDeGeometry || !settings.showRaDeGeometryPanel) return;
+
+	ImGui::SetNextWindowPos(ImVec2(16.0f, 118.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowBgAlpha(0.92f);
+	ImGuiWindowFlags flags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse;
+	if(ImGui::Begin("RaDe-GS Geometry", &settings.showRaDeGeometryPanel, flags)){
+		ImGui::TextUnformatted("Ray-plane geometry output");
+		ImGui::Separator();
+		ImGui::RadioButton("Color", &settings.rendermode, RENDERMODE_COLOR);
+		ImGui::RadioButton("Expected depth", &settings.rendermode, RENDERMODE_DEPTH);
+		ImGui::RadioButton("Camera-space normal", &settings.rendermode, RENDERMODE_NORMAL);
+		if(ImGui::IsItemHovered())
+			ImGui::SetTooltip("Alpha-composited RaDe-GS surface normal, encoded as RGB.");
+		ImGui::Separator();
+		ImGui::TextDisabled("Depth: alpha-weighted ray-plane depth");
+	}
+	ImGui::End();
 }

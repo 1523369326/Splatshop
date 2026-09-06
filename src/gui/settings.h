@@ -28,6 +28,18 @@ void SplatEditor::makeSettings(){
 		ImGui::RadioButton("Tiles##renermode", &settings.rendermode, RENDERMODE_TILES); ImGui::SameLine();
 		ImGui::RadioButton("Heatmap##renermode", &settings.rendermode, RENDERMODE_HEATMAP); ImGui::SameLine();
 
+		if(ImGui::Checkbox("RaDe-GS geometry", &settings.enableRaDeGeometry)){
+			settings.showRaDeGeometryPanel = settings.enableRaDeGeometry;
+			if(!settings.enableRaDeGeometry && settings.rendermode == RENDERMODE_NORMAL)
+				settings.rendermode = RENDERMODE_COLOR;
+		}
+		if(settings.enableRaDeGeometry){
+			ImGui::TextUnformatted("RaDe-GS output:"); ImGui::SameLine();
+			ImGui::RadioButton("RGB##rade-settings", &settings.rendermode, RENDERMODE_COLOR); ImGui::SameLine();
+			ImGui::RadioButton("Depth##rade-settings", &settings.rendermode, RENDERMODE_DEPTH); ImGui::SameLine();
+			ImGui::RadioButton("Normal##rade-settings", &settings.rendermode, RENDERMODE_NORMAL);
+		}
+
 		// ImGui::SameLine();
 		if(ImGui::Button("Save Cubins")){
 			writeBinaryFile(format("./{}.cubin", "gaussians") , (uint8_t*)editor->prog_gaussians_editing->cubin, editor->prog_gaussians_editing->cubinSize);

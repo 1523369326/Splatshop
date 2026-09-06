@@ -12,11 +12,8 @@ struct RasterizationData{
 	float depth;
 	uint32_t flags;
 	vec4 colors;
-	uint32_t padding1;
-	uint32_t padding2;
-	uint32_t padding3;
-	uint32_t padding4;
-	// uint32_t padding5;
+	vec3 rayPlane;
+	vec3 normal;
 };
 
 extern "C" __global__
@@ -97,6 +94,13 @@ void kernel_render_gaussians(
 	float expectedDepthSum = 0.0f;
 	float expectedWeightSum = 0.0f;
 	float maxWeight = 0.0f;
+	float raDeDepthSum = 0.0f;
+	vec3 raDeNormalSum = vec3(0.0f);
+	float focalX = target.proj[0][0] * width * 0.5f;
+	float focalY = target.proj[1][1] * height * 0.5f;
+	float pixelRayX = (fpixel_x - 0.5f * float(width - 1)) / focalX;
+	float pixelRayY = (fpixel_y - 0.5f * float(height - 1)) / focalY;
+	float rayDistanceToZ = rsqrtf(pixelRayX * pixelRayX + pixelRayY * pixelRayY + 1.0f);
 	if(pixel_x < width && pixel_y < height){
 		depth = __int_as_float(target.framebuffer[pixelID] >> 32);
 	}
@@ -155,6 +159,8 @@ void kernel_render_gaussians(
 			data.imgpos = vec2(stageData.imgPos_encoded) / 10.0f;
 			data.depth = depth;
 			data.flags = stageData.flags;
+			data.rayPlane = stageData.rayPlane;
+			data.normal = stageData.normal;
 			data.colors = vec4{
 				(C >>  0) & 0xff,
 				(C >>  8) & 0xff,
@@ -226,6 +232,18 @@ void kernel_render_gaussians(
 				pixel.b += alpha * splatColor.b;
 				pixel.w += alpha;
 
+				if(args.uniforms.enableRaDeGeometry){
+					// RaDe-GS evaluates d = px * Δu + py * Δv + tc at the
+					// fragment. Here pFrag is pixel - Gaussian mean, hence -pFrag.
+					float fragmentDepth = rasterdata.rayPlane.z
+						- rasterdata.rayPlane.x * pFrag.x
+						- rasterdata.rayPlane.y * pFrag.y;
+					// RaDe-GS stores ray distance in the plane; rln converts it
+					// to camera-space Z depth for the displayed depth map.
+					raDeDepthSum += alpha * fragmentDepth * rayDistanceToZ;
+					raDeNormalSum += alpha * rasterdata.normal;
+				}
+
 				remainingTranslucency = 1.0f - pixel.w;
 
 				if(args.uniforms.measurementDepthMode == 0){
@@ -245,7 +263,8 @@ void kernel_render_gaussians(
 				// update depth buffer
 				// if(remainingTranslucency < 8.0f / 255.0f)
 				// if(remainingTranslucency < 0.030f)
-				if(remainingTranslucency < 4.0f / 255.0f && (rasterdata.flags & FLAGS_DISABLE_DEPTHWRITE) == 0)
+				float depthStopThreshold = args.uniforms.enableRaDeGeometry ? 1e-4f : 4.0f / 255.0f;
+				if(remainingTranslucency < depthStopThreshold && (rasterdata.flags & FLAGS_DISABLE_DEPTHWRITE) == 0)
 				{
 					depth = rasterdata.depth;
 					uint64_t udepth = __float_as_uint(depth);
@@ -352,7 +371,9 @@ void kernel_render_gaussians(
 				vec3{94,79,162},
 			};
 
-			float w = depth / 3.0f;
+			float displayedDepth = (args.uniforms.enableRaDeGeometry && pixel.w > 0.0f)
+				? raDeDepthSum / pixel.w : depth;
+			float w = displayedDepth / 3.0f;
 			float u = w - floor(w);
 
 			int i0 = w;
@@ -366,11 +387,25 @@ void kernel_render_gaussians(
 			rgba[1] = C.y;
 			rgba[2] = C.z;
 
-			uint32_t udepth = __float_as_uint(depth);
+			uint32_t udepth = __float_as_uint(displayedDepth);
 
 			uint64_t pixel = (uint64_t(udepth) << 32) | color;
 
 			target.framebuffer[pixelID] = pixel;
+		}else if(args.uniforms.rendermode == RENDERMODE_NORMAL && args.uniforms.enableRaDeGeometry){
+
+			vec3 normal = pixel.w > 0.0f ? raDeNormalSum / pixel.w : vec3(0.0f, 0.0f, -1.0f);
+			float normalLength = length(normal);
+			if(normalLength > 1e-8f) normal /= normalLength;
+			vec3 encodedNormal = 0.5f * (normal + vec3(1.0f));
+			rgba[0] = clamp(encodedNormal.r * 255.0f, 0.0f, 255.0f);
+			rgba[1] = clamp(encodedNormal.g * 255.0f, 0.0f, 255.0f);
+			rgba[2] = clamp(encodedNormal.b * 255.0f, 0.0f, 255.0f);
+			rgba[3] = 255;
+
+			float displayedDepth = pixel.w > 0.0f ? raDeDepthSum / pixel.w : depth;
+			uint32_t udepth = __float_as_uint(displayedDepth);
+			target.framebuffer[pixelID] = (uint64_t(udepth) << 32) | color;
 		}
 	}
 

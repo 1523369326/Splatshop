@@ -57,6 +57,7 @@ void kernel_render_gaussians_coretail(
 	float maxWeight = 0.0f;
 	int coreLimit = clamp(args.uniforms.coreTailK, 1, 64);
 	float coreAlphaThreshold = clamp(args.uniforms.coreTailCoreAlphaThreshold, 0.0f, 1.0f);
+	float coreOpacity = clamp(args.uniforms.coreTailCoreOpacity, 0.0f, 1.0f);
 
 	int iterations = (numPointsInTile + PREFETCH_COUNT - 1) / PREFETCH_COUNT;
 	for(int iteration = 0; iteration < iterations; iteration++){
@@ -142,8 +143,11 @@ void kernel_render_gaussians_coretail(
 						firstCoreDepth = rasterdata.depth;
 						firstCoreFlags = rasterdata.flags;
 					}
-					coreColor += coreTransmittance * alpha * vec3(splatColor);
-					coreTransmittance *= 1.0f - alpha;
+					// The slider changes only the exact front-to-back Core blend.
+					// Tail splats still use their original alpha in the OIT accumulation below.
+					float coreAlpha = alpha * coreOpacity;
+					coreColor += coreTransmittance * coreAlpha * vec3(splatColor);
+					coreTransmittance *= 1.0f - coreAlpha;
 					coreCount++;
 				}else if(coreTransmittance >= CORETTAIL_TRANSMITTANCE_THRESHOLD){
 					tailColorSum += alpha * vec3(splatColor);

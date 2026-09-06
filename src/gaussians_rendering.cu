@@ -587,6 +587,65 @@ void kernel_stageSplats(
 
 	mat3 cov3D = rotation * scale * scale * transpose(rotation);
 
+	// RaDe-GS: build the ray-space plane once per Gaussian.  The standard
+	// renderer below evaluates this plane for every Gaussian-pixel pair.
+	// OpenGL view space looks along -Z, so flip that axis before applying the
+	// ray-space derivation (whose positive third axis is camera distance).
+	vec3 rayPlane = vec3(0.0f);
+	vec3 normal = vec3(0.0f, 0.0f, -1.0f);
+	if(args.uniforms.enableRaDeGeometry){
+		vec2 rayFocal = vec2(
+			proj[0][0] * target.width * 0.5f,
+			proj[1][1] * target.height * 0.5f);
+		vec3 rayCenter = vec3(viewPos.x, viewPos.y, -viewPos.z);
+		float zc = rayCenter.z;
+		float tc = length(rayCenter);
+		float minimumScale = min(model.scale[splatIndex].x, min(model.scale[splatIndex].y, model.scale[splatIndex].z));
+		if(zc > 1e-6f && tc > 1e-6f && minimumScale > 1e-6f){
+			mat3 cameraFlip(1.0f);
+			cameraFlip[2][2] = -1.0f;
+			mat3 modelToRayCamera = cameraFlip * mat3(worldView);
+			// Construct Sigma'_inv as A^T A instead of directly inverting the
+			// covariance. This mirrors RaDe-GS and is stable for thin splats.
+			mat3 inverseScale(1.0f);
+			inverseScale[0][0] = 1.0f / model.scale[splatIndex].x;
+			inverseScale[1][1] = 1.0f / model.scale[splatIndex].y;
+			inverseScale[2][2] = 1.0f / model.scale[splatIndex].z;
+			mat3 inverseCovarianceFactor = inverseScale * transpose(rotation) * inverse(modelToRayCamera);
+			mat3 inverseCovarianceRayCamera = transpose(inverseCovarianceFactor) * inverseCovarianceFactor;
+
+			float u = rayCenter.x / zc;
+			float v = rayCenter.y / zc;
+			vec3 uvh = vec3(u, v, 1.0f);
+			vec3 q = inverseCovarianceRayCamera * uvh;
+			float qLength = length(q);
+			if(qLength > 1e-8f && isfinite(qLength)){
+				vec3 qNormalized = q / qLength;
+				float u2 = u * u;
+				float v2 = v * v;
+				float uv = u * v;
+				float rayLength2 = u2 + v2 + 1.0f;
+				float factor = tc / rayLength2;
+				float denominator = max(dot(qNormalized, uvh), 1e-7f);
+				mat3 nJInverse = mat3(
+					v2 + 1.0f, -uv, 0.0f,
+					-uv, u2 + 1.0f, 0.0f,
+					-u, -v, 0.0f);
+				vec3 plane = nJInverse * (qNormalized / denominator);
+				rayPlane = vec3(plane.x * factor / rayFocal.x, plane.y * factor / rayFocal.y, tc);
+
+				vec3 rayNormal = vec3(-plane.x * factor, -plane.y * factor, -1.0f);
+				mat3 nJ = mat3(
+					1.0f / zc, 0.0f, -rayCenter.x / (zc * zc),
+					0.0f, 1.0f / zc, -rayCenter.y / (zc * zc),
+					rayCenter.x / tc, rayCenter.y / tc, rayCenter.z / tc);
+				vec3 surfaceNormal = nJ * rayNormal;
+				float normalLength = length(surfaceNormal);
+				if(normalLength > 1e-8f && isfinite(normalLength)) normal = surfaceNormal / normalLength;
+			}
+		}
+	}
+
 	// check lower bitrates
 	// float* floats = (float*)&cov3D;
 	// for(int i = 0; i < 9; i++){
@@ -782,6 +841,8 @@ void kernel_stageSplats(
 	stuff.imgPos_encoded       = pixelCoord_encoded;
 	stuff.flags                = flags;
 	stuff.color                = to32BitColor(color);
+	stuff.rayPlane             = rayPlane;
+	stuff.normal               = normal;
 	
 	encode_stagedata(stuff, _basisVector1, _basisVector2, depth);
 
@@ -1770,6 +1831,7 @@ void kernel_render_gaussians_perspectivecorrect(
 
 #include "./render/render_gaussians.cuh"
 #include "./render/render_gaussians_coretail.cuh"
+#include "./render/render_gaussians_sortfree.cuh"
 // #include "./render/render_gaussians_subsets.cuh"
 #include "./render/render_gaussians_solid.cuh"
 // #include "./render/render_gaussians_fetchfilter.cuh"
