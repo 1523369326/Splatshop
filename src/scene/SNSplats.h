@@ -13,6 +13,10 @@ struct SNSplats : public SceneNode{
 
 	shared_ptr<Splats> splats = nullptr;
 	GaussianDataManager dmng;
+	// localIndex is stable only within this epoch. Any physical SoA reorder or
+	// compaction must advance it before selector results may be committed.
+	uint64_t indexEpoch = 1;
+	uint64_t contentRevision = 1;
 
 	SNSplats(string name, shared_ptr<Splats> splats)
 		: SceneNode(name), dmng(name)

@@ -113,17 +113,11 @@ struct VR_TransformSelectionAction : public InputAction{
 			}else{
 				// Transform selected splats
 				scene.process<SNSplats>([&](SNSplats* node){
-					uint32_t first = 0;
-					uint32_t count = node->dmng.data.count;
 					bool onlySelected = true;
 
 					mat4 t = inverse(node->transform) * delta * (node->transform);
 
-					editor->prog_gaussians_editing->launch(
-						"kernel_apply_transformation",
-						{&editor->launchArgs, &node->dmng.data, &t, &first, &count, &onlySelected},
-						count
-					);
+					editor->applyTransformation(node->dmng.data,t,onlySelected);
 
 					if(!currentUndoAction->transforms.contains(node)){
 						currentUndoAction->transforms[node] = mat4(1.0f);

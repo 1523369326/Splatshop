@@ -341,7 +341,7 @@ void drawsplats_perspectiveCorrect_concurrent(
 }
 
 void drawsplats_3dgs_concurrent(
-	Scene* scene, 
+	Scene* scene,
 	vector<ConcurrentTarget> targets
 ){
 
@@ -367,6 +367,9 @@ void drawsplats_3dgs_concurrent(
 
 	const bool sharedMultiView = settings.multiView &&
 		settings.multiViewPipeline == 0 && targets.size() == 4;
+	#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+	bool selectorTargetPrepared = false;
+	#endif
 
 	// The Gaussian input is already SoA. Build the camera-independent Cov3D
 	// once, then let the four projection stages reuse it.
@@ -389,7 +392,7 @@ void drawsplats_3dgs_concurrent(
 		target.target.usePrecomputedCov3D = true;
 	}
 
-	// staging of splats needs a lot of memory, 
+	// staging of splats needs a lot of memory,
 	// so we still do this part sequentially, one target after the other
 	for(auto& target : targets){
 
@@ -406,6 +409,13 @@ void drawsplats_3dgs_concurrent(
 		target.virt_depth->commit(sizeof(float) * numPotentiallyVisibleSplats);
 		target.virt_ordering_splatdepth->commit(sizeof(uint32_t) * numPotentiallyVisibleSplats);
 		target.virt_numTilefragments_splatwise->commit(sizeof(uint32_t) * numPotentiallyVisibleSplats);
+		#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+		if(!selectorTargetPrepared && editor->gaussianSelector &&
+			editor->gaussianSelector->prepareStandardTarget(target.target, numPotentiallyVisibleSplats)) {
+			editor->gaussianSelector->captureOpaqueDepth(target.target, target.mainstream);
+			selectorTargetPrepared = true;
+		}
+		#endif
 
 		scene->process<SNSplats>([&](SNSplats* node) {
 			if(!node->visible) return;
@@ -415,6 +425,9 @@ void drawsplats_3dgs_concurrent(
 
 			mat4 world = scene->world->transform;
 			GaussianData data = node->dmng.data;
+			#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+			if(editor->gaussianSelector) editor->gaussianSelector->configureGaussianData(node, data);
+			#endif
 
 			ColorCorrection colorCorrection;
 			if(node->selected){
@@ -426,7 +439,7 @@ void drawsplats_3dgs_concurrent(
 				&editor->launchArgs,
 				&target, 
 				&colorCorrection, 
-				&node->dmng.data, 
+				&data,
 				// out
 				&target.cptr_numVisibleSplats,
 				&target.cptr_numFragments, 
@@ -442,7 +455,7 @@ void drawsplats_3dgs_concurrent(
 			cuStreamSynchronize(target.mainstream);
 		}
 
-		
+
 
 	}
 	// cuCtxSynchronize();
@@ -466,7 +479,6 @@ void drawsplats_3dgs_concurrent(
 
 		target.numFragments = numFragments;
 		target.numVisibleSplats = numVisibleSplats;
-
 		{
 			string label = "numSplats";
 			string value = format(getSaneLocale(), "{:L}", numVisibleSplats);
@@ -555,9 +567,17 @@ void drawsplats_3dgs_concurrent(
 		cuStreamWaitEvent(target.mainstream, target.cu_tilesComputed, 0);
 		cuStreamWaitEvent(target.sidestream, target.cu_tilesComputed, 0);
 
-		if(editor->settings.requestDebugDump){ 
+		if(editor->settings.requestDebugDump){
 			dump_tile(target, numTiles);
 		}
+		#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+		if(target.target.selectorStageRows && editor->gaussianSelector) {
+			if(target.numFragments > 0) editor->gaussianSelector->launchCoverage(target.target, target.cptr_tiles,
+				target.virt_tileIDs->cptr, target.virt_indices->cptr, target.virt_stagedata->cptr,
+				numTiles, target.numFragments, target.sidestream);
+			else editor->gaussianSelector->finishEmptyCoverage(target.sidestream);
+		}
+		#endif
 
 		if(target.numFragments > 0){
 

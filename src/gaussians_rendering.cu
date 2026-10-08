@@ -723,10 +723,10 @@ void kernel_stageSplats(
 			0.0f, focal.y, 0.0f,
 			0.0f, 0.0f, 0.0f);
 	}else{
-	float s = 1.0f / (viewPos.z * viewPos.z);
+		float s = 1.0f / (viewPos.z * viewPos.z);
 		J = mat3(
-		focal.x / viewPos.z   , 0.0f                  , -(focal.x * viewPos.x) * s,
-		0.0f                  , focal.y / viewPos.z   , -(focal.y * viewPos.y) * s,
+			focal.x / viewPos.z, 0.0f, -(focal.x * viewPos.x) * s,
+			0.0f, focal.y / viewPos.z, -(focal.y * viewPos.y) * s,
 			0.0f, 0.0f, 0.0f);
 	}
 
@@ -881,6 +881,21 @@ void kernel_stageSplats(
 	// initializes <numVisibleSplats> elements with ordering[index] = index;
 	uint32_t visibleSplatID = atomicAdd(visibleSplatCounter, 1);
 	ordering[visibleSplatID] = visibleSplatID;
+	#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+	if(target.selectorStageRows){
+		target.selectorStageRows[visibleSplatID] = model.selectorTarget
+			? (model.selectorLocalToSnapshot ? model.selectorLocalToSnapshot[uint32_t(splatIndex)] : model.selectorSnapshotBase + uint32_t(splatIndex))
+			: 0xffffffffu;
+	}
+	if(model.selectorPreviewWords && model.selectorTarget){
+		const uint64_t word = model.selectorPreviewWords[uint32_t(splatIndex) >> 6];
+		if((word >> (uint32_t(splatIndex) & 63u)) & 1ull){
+			// Preview is an independent visualization channel; it never mutates
+			// FLAGS_SELECTED or the stored Gaussian color/SH.
+			color = mix(color, vec4(0.05f, 1.0f, 0.20f, color.a), 0.65f);
+		}
+	}
+	#endif
 
 	StageData stuff;
 	stuff.imgPos_encoded       = pixelCoord_encoded;
@@ -1875,6 +1890,9 @@ void kernel_render_gaussians_perspectivecorrect(
 
 
 #include "./render/render_gaussians.cuh"
+#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+#include "./render/gaussian_selector_coverage.cuh"
+#endif
 #include "./render/render_gaussians_coretail.cuh"
 #include "./render/render_gaussians_sortfree.cuh"
 // #include "./render/render_gaussians_subsets.cuh"

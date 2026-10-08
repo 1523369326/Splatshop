@@ -41,6 +41,10 @@ struct InputAction{
 	virtual void update(){};
 	virtual void stop(){};
 	virtual void makeToolbarSettings(){};
+	// Interaction-local history (for example selector strokes) is distinct
+	// from the editor's model mutation history.
+	virtual bool undoInteractionStep(){ return false; }
+	virtual bool redoInteractionStep(){ return false; }
 };
 
 

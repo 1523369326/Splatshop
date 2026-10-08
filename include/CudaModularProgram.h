@@ -102,6 +102,7 @@ struct CudaModule{
 	string name = "";
 	bool compiled = false;
 	bool success = false;
+	vector<string> compileOptions;
 	
 	size_t ptxSize = 0;
 	char* ptx = nullptr;
@@ -109,9 +110,10 @@ struct CudaModule{
 	size_t ltoirSize = 0;
 	char* ltoir = nullptr;
 
-	CudaModule(string path, string name){
+	CudaModule(string path, string name, vector<string> compileOptions = {}){
 		this->path = path;
 		this->name = name;
+		this->compileOptions = std::move(compileOptions);
 	}
 
 	void compile(){
@@ -128,12 +130,22 @@ struct CudaModule{
 
 		char* c_cuda_path = std::getenv("CUDA_PATH");
 		string cuda_path = "";
-		if(c_cuda_path){
+		if(c_cuda_path && fs::exists(fs::path(c_cuda_path) / "include")){
 			cuda_path = c_cuda_path;
 		}
 
+		#ifdef SPLATSHOP_CUDA_TOOLKIT_ROOT
+		if(cuda_path.empty()){
+			fs::path configuredCudaPath = SPLATSHOP_CUDA_TOOLKIT_ROOT;
+			if(fs::exists(configuredCudaPath / "include")){
+				cuda_path = configuredCudaPath.string();
+				println("Using CUDA Toolkit configured at build time: {}", cuda_path);
+			}
+		}
+		#endif
+
 		if(cuda_path.size() == 0){
-			println("Could not find cuda directory via environment variable 'CUDA_PATH'.");
+			println("Could not find a CUDA Toolkit via CUDA_PATH or the build configuration.");
 			println("Trying '/usr/local/cuda/' instead.");
 			println("If this does not work and you're on linux, try setting the CUDA_PATH variable like this, before starting the program.");
 			println("export CUDA_PATH=/usr/local/cuda-12.8/");
@@ -165,7 +177,7 @@ struct CudaModule{
 		nvrtcCreateProgram(&prog, source.c_str(), name.c_str(), 0, NULL, NULL);
 
 
-		std::vector<const char*> opts = { 
+		std::vector<const char*> opts = {
 			// "--gpu-architecture=compute_75",
 			// "--gpu-architecture=compute_86",
 			arch.c_str(),
@@ -186,6 +198,9 @@ struct CudaModule{
 			"--split-compile=0",                 // compiler optimizations in parallel. 0 -> max available threads
 			"--time=cuda_compile_time.txt",      // show compiler timings
 		};
+		for(const auto& option : compileOptions){
+			opts.push_back(option.c_str());
+		}
 
 		println("Compile Options: ");
 		for(auto opt : opts){
@@ -252,6 +267,7 @@ struct CudaModularProgram{
 	struct CudaModularProgramArgs{
 		vector<string> modules;
 		vector<string> kernels;
+		vector<string> compileOptions;
 	};
 
 	// static void cu_checked(CUresult result){
@@ -368,7 +384,7 @@ struct CudaModularProgram{
 		for(auto modulePath : modulePaths){
 
 			string moduleName = fs::path(modulePath).filename().string();
-			auto module = new CudaModule(modulePath, moduleName);
+			auto module = new CudaModule(modulePath, moduleName, args.compileOptions);
 
 			module->compile();
 

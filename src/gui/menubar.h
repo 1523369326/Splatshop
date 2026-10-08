@@ -65,6 +65,12 @@ void SplatEditor::makeMenubar(){
 		}
 		endHighlightButtonIf();
 
+		startHighlightButtonIf(settings.showDevFeatures);
+		if(ImGui::Button("Dev")){
+			settings.showDevFeatures = !settings.showDevFeatures;
+		}
+		endHighlightButtonIf();
+
 		startHighlightButtonIf(settings.showKernelInfos);
 		if(ImGui::Button("Dev&Kernels")){
 			settings.showKernelInfos = !settings.showKernelInfos;

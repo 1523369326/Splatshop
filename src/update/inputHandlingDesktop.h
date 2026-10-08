@@ -113,9 +113,9 @@ void SplatEditor::inputHandlingDesktop(){
 				}
 			}
 		}else if (isCtrlDown && Runtime::getKeyAction('z') == GLFW_PRESS) {
-			editor->undo();
+			if(!state.currentAction || !state.currentAction->undoInteractionStep()) editor->undo();
 		}else if (isCtrlDown && Runtime::getKeyAction('y') == GLFW_PRESS) {
-			editor->redo();
+			if(!state.currentAction || !state.currentAction->redoInteractionStep()) editor->redo();
 		}if(isSpaceDown && !wasSpaceDown){
 			
 			if(settings.splatRenderer == SPLATRENDERER_3DGS){

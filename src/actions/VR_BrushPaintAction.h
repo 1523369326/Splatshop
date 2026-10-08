@@ -34,6 +34,7 @@ struct VR_BrushPaintUndoAction : public Action{
 			// to undo, we swap colors from the model's buffer with the indexed stashed colors.
 			void* args[] = {&undodata.cptr_indices, &undodata.cptr_indexedColors, &data.color, &undodata.diffcount};
 			editor->prog_gaussians_editing->launch("kernel_color_diff_swap", args, undodata.diffcount);
+			if(undodata.diffcount) node->contentRevision++;
 		}
 	}
 
@@ -46,6 +47,7 @@ struct VR_BrushPaintUndoAction : public Action{
 			// to redo, we again swap colors from the model's buffer with the indexed stashed colors.
 			void* args[] = {&undodata.cptr_indices, &undodata.cptr_indexedColors, &data.color, &undodata.diffcount};
 			editor->prog_gaussians_editing->launch("kernel_color_diff_swap", args, undodata.diffcount);
+			if(undodata.diffcount) node->contentRevision++;
 		}
 	}
 
@@ -66,6 +68,7 @@ struct VR_BrushPaintUndoAction : public Action{
 			cuMemcpyDtoH(&undodata.diffcount, cptr_counter, 4);
 
 			if (undodata.diffcount > 0) {
+				node->contentRevision++;
 
 				undodata.cptr_indices = CURuntime::alloc("color diff indices", 4 * undodata.diffcount);
 				undodata.cptr_indexedColors = CURuntime::alloc("color diff colors", sizeof(Color) * undodata.diffcount);

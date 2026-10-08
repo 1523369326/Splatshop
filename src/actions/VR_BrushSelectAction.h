@@ -23,6 +23,7 @@ struct VR_BrushSelectUndoAction : public Action{
 				editor->prog_gaussians_editing->launch("kernel_deselect_masked", args, node->dmng.data.count);
 			}else if(brushmode == BRUSHMODE::ERASE){
 				editor->prog_gaussians_editing->launch("kernel_undelete_masked", args, node->dmng.data.count);
+				node->contentRevision++;
 			}
 		}
 	}
@@ -36,6 +37,7 @@ struct VR_BrushSelectUndoAction : public Action{
 				editor->prog_gaussians_editing->launch("kernel_select_masked", args, node->dmng.data.count);
 			}else if(brushmode == BRUSHMODE::ERASE){
 				editor->prog_gaussians_editing->launch("kernel_delete_masked", args, node->dmng.data.count);
+				node->contentRevision++;
 			}
 		}
 	}
@@ -176,6 +178,7 @@ struct VR_BrushSelectAction : public InputAction{
 		});
 
 		if(currentUndoAction){
+			if(currentUndoAction->brushmode == BRUSHMODE::ERASE) for(auto& [node, _] : currentUndoAction->splatmasks) node->contentRevision++;
 			editor->addAction(currentUndoAction);
 			currentUndoAction = nullptr;
 		}

@@ -4,6 +4,10 @@ project(SplatEditor)
 set(CMAKE_CXX_STANDARD 23)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+option(SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR "Enable the GaussianSelector host/UI integration" ON)
+option(SPLATSHOP_BUILD_GAUSSIAN_SELECTOR_TESTS "Build the dependency-free GaussianSelector core tests" OFF)
+option(SPLATSHOP_FETCH_GAUSSIAN_SELECTOR_DEPS "Fetch pinned GaussianSelector dependencies" ON)
+
 
 # add_subdirectory(./libs/openvr-master)
 
@@ -42,6 +46,15 @@ endif (WIN32)
 
 add_executable(${TARGET_NAME} ${SplatEditor_SOURCES})
 
+if(SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR OR SPLATSHOP_BUILD_GAUSSIAN_SELECTOR_TESTS)
+	include(cmake/gaussian_selector.cmake)
+endif()
+
+if(SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR)
+	target_link_libraries(${TARGET_NAME} gaussian_selector_core)
+	target_compile_definitions(${TARGET_NAME} PRIVATE SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR=1)
+endif()
+
 if (WIN32)
 	# set workdir to ../$(SolutionDir), so that .cu files can be monitored/reloaded/compiled
 	set_property(TARGET ${TARGET_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$(SolutionDir)..")
@@ -67,9 +80,9 @@ target_include_directories(${TARGET_NAME} PRIVATE ./libs)
 # I give up, let's just include OpenVR like this.
 target_include_directories(${TARGET_NAME} PRIVATE ./libs/openvr/headers)
 if (WIN32)
-	target_link_libraries(${TARGET_NAME} ../libs/openvr/lib/win64/openvr_api)
+	target_link_libraries(${TARGET_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/lib/win64/openvr_api.lib)
 	add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy "$(SolutionDir)../libs/openvr/bin/win64/openvr_api.dll" "$(OutDir)"
+		COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/libs/openvr/bin/win64/openvr_api.dll" "$<TARGET_FILE_DIR:${TARGET_NAME}>"
 		COMMENT "POST BUILD: copying openvr folder")
 else()
 	add_compile_definitions(NO_OPENVR)

@@ -1,5 +1,9 @@
 #include "SplatEditor.h"
 
+#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+#include "GaussianSelectorRuntime.h"
+#endif
+
 #include <algorithm>
 #include <execution>
 
@@ -510,10 +514,12 @@ void SplatEditor::insertNodeToNode(shared_ptr<SceneNode> node, shared_ptr<SceneN
 		uint32_t count = gd_source.count;
 		gd_target.count += gd_source.count;
 		prog_gaussians_editing->launch(
-			"kernel_apply_transformation", 
-			{&launchArgs, &gd_target, &transform, &first, &count, &_onlySelected }, 
+			"kernel_apply_transformation",
+			{&launchArgs, &gd_target, &transform, &first, &count, &_onlySelected },
 			count
 		);
+		target->indexEpoch++;
+		target->contentRevision++;
 		
 		
 		// sortSplatsDevice(target);
@@ -563,6 +569,8 @@ void SplatEditor::merge_undoable(shared_ptr<SceneNode> snsource, shared_ptr<Scen
 			uint32_t count = originalSourceCount;
 			gd_source.count = originalSourceCount;
 			gd_target.count = originalTargetCount;
+			source->indexEpoch++; source->contentRevision++;
+			target->indexEpoch++; target->contentRevision++;
 			
 			editor->prog_gaussians_editing->launch(
 				"kernel_apply_transformation", 
@@ -602,6 +610,8 @@ void SplatEditor::merge_undoable(shared_ptr<SceneNode> snsource, shared_ptr<Scen
 			uint32_t first = gd_target.count;
 			uint32_t count = gd_source.count;
 			gd_target.count += gd_source.count;
+			target->indexEpoch++; target->contentRevision++;
+			source->indexEpoch++; source->contentRevision++;
 			editor->prog_gaussians_editing->launch(
 				"kernel_apply_transformation", 
 				{&editor->launchArgs, &gd_target, &transform, &first, &count, &_onlySelected }, 
@@ -650,12 +660,22 @@ void SplatEditor::applyTransformation(GaussianData& model, mat4 transformation, 
 	void* args[] = {&launchArgs, &model, &_transformation, &start, &model.count, &_onlySelected};
 
 	prog_gaussians_editing->launch("kernel_apply_transformation", args, model.count);
+	touchGaussianContent(model);
 }
 
 void SplatEditor::apply(GaussianData& model, ColorCorrection value){
 	void* args[] = {&launchArgs, &model, &value};
 
 	prog_gaussians_editing->launch("kernel_apply_colorCorrection", args, model.count);
+	touchGaussianContent(model);
+}
+
+void SplatEditor::touchGaussianContent(GaussianData& model, bool indicesChanged){
+	scene.process<SNSplats>([&](SNSplats* node){
+		if(&node->dmng.data != &model) return;
+		if(indicesChanged) node->indexEpoch++;
+		node->contentRevision++;
+	});
 }
 
 //void SplatEditor::setSelected(GaussianData& model){
@@ -917,6 +937,7 @@ void SplatEditor::deleteSelection(){
 
 		void* deletionmask = nullptr;
 		prog_gaussians_editing->launch("kernel_delete_selection", {&launchArgs, &node->dmng.data, &deletionmask}, node->dmng.data.count);
+		node->contentRevision++;
 	});
 }
 
@@ -945,6 +966,7 @@ void SplatEditor::deleteSelection_undoable(){
 		cuMemsetD8(cptr_deletionmask, 0, requiredBytes);
 
 		prog_gaussians_editing->launch("kernel_delete_selection", {&node->dmng.data, &cptr_deletionmask}, node->dmng.data.count);
+		node->contentRevision++;
 
 		undodata->nodes.push_back(node);
 		undodata->deletionmasks.push_back(cptr_deletionmask);
@@ -956,6 +978,7 @@ void SplatEditor::deleteSelection_undoable(){
 				SNSplats* node = undodata->nodes[i];
 				void* args[] = {&node->dmng.data, &undodata->deletionmasks[i]};
 				prog_gaussians_editing->launch("kernel_undelete_selection", args, node->dmng.data.count);
+				node->contentRevision++;
 			}
 		},
 		.redo = [=](){
@@ -963,6 +986,7 @@ void SplatEditor::deleteSelection_undoable(){
 				SNSplats* node = undodata->nodes[i];
 				void* deletionmask = nullptr;
 				prog_gaussians_editing->launch("kernel_delete_selection", {&node->dmng.data, &deletionmask}, node->dmng.data.count);
+				node->contentRevision++;
 			}
 		},
 	});
@@ -1106,6 +1130,7 @@ void SplatEditor::uploadSplats(SNSplats* node){
 
 		gd.count += numToUpload;
 		gd.numUploaded += numToUpload;
+		node->contentRevision++;
 
 		updateBoundingBox(node);
 		createOrUpdateThumbnail(node);
@@ -1326,6 +1351,8 @@ void SplatEditor::sortSplatsDevice(SNSplats* node, bool putDeletedLast){
 	cuMemFree(cptr_tmpstorage);
 
 	node->dirty = true;
+	node->indexEpoch++;
+	node->contentRevision++;
 
 	printElapsedTime("duration sort splats", t_start);
 }
@@ -1563,12 +1590,26 @@ void SplatEditor::initCudaProgram(){
 	for(Program program : programs){
 		string filename = fs::path(program.path).filename().string();
 		string cubinPath = format("./cubins/{}.cubin", filename);
+		bool usePrecompiledCubin = fs::exists(cubinPath);
+		#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+		// HostDeviceInterface structs gain selector fields in an ON build.  Every
+		// module that takes those structs by value must use the identical ABI;
+		// shipped cubins and selectively-defined macros would misalign arguments.
+		usePrecompiledCubin = false;
+		#endif
 
-		if(fs::exists(cubinPath)){
+		if(usePrecompiledCubin){
 			auto buffer = readBinaryFile(cubinPath);
 			*program.ptr = CudaModularProgram::fromCubin(buffer->data, buffer->size);
 		}else{
-			*program.ptr = new CudaModularProgram({program.path});
+			#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+			*program.ptr = new CudaModularProgram({
+				.modules = {program.path},
+				.compileOptions = {"-DSPLATSHOP_ENABLE_GAUSSIAN_SELECTOR=1"},
+			});
+			#else
+				*program.ptr = new CudaModularProgram({program.path});
+			#endif
 		}
 	}
 
@@ -1730,6 +1771,7 @@ void SplatEditor::drawGUI() {
 		makeRaDeGeometryControls();
 		makeMeasurementOverlay();
 		makeDevGUI();
+		makeDevFeaturesGUI();
 		makeEditingGUI();
 		makeColorCorrectionGui();
 		makeStats();
@@ -2037,10 +2079,12 @@ void SplatEditor::filter(SNSplats* source, SNSplats* target, FilterRules _rules)
 
 		void* changedmask = nullptr;
 		prog_gaussians_editing->launch(
-			"kernel_deselect", 
+			"kernel_deselect",
 			{&launchArgs, &target->dmng.data, &changedmask}, 
 			target->dmng.data.count
 		);
+		target->indexEpoch++;
+		target->contentRevision++;
 	}
 
 	cuMemFree(cptr_counter);
@@ -2270,6 +2314,8 @@ void SplatEditor::applyDeletion(){
 
 		node->dmng.data.count = numNondeleted;
 		node->dmng.commit(numNondeleted);
+		node->indexEpoch++;
+		node->contentRevision++;
 
 	});
 
@@ -2410,6 +2456,7 @@ int32_t SplatEditor::getNumDeletedSplats(){
 #include "gui/toolbar.h"
 #include "gui/guivr.h"
 #include "gui/editing.h"
+#include "gui/devFeatures.h"
 #include "gui/dev.h"
 #include "gui/debugInfo.h"
 #include "gui/assets.h"

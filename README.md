@@ -101,6 +101,23 @@ export LD_LIBRARY_PATH=~/gcc-14.1.0/x86_64-linux-gnu/libstdc++-v3/src/.libs:$LD_
 
 </details>
 
+### GaussianSelector (Windows)
+
+GaussianSelector is integrated into the main editor and enabled by default.
+To update an existing build that cached the feature as OFF, run from the repository root:
+
+```powershell
+cmake -S . -B build -DSPLATSHOP_ENABLE_GAUSSIAN_SELECTOR=ON -DSPLATSHOP_FETCH_GAUSSIAN_SELECTOR_DEPS=ON
+cmake --build build --config Release --target SplatEditor -- /m
+.\build\Release\SplatEditor.exe
+```
+
+The first configuration fetches pinned igraph sources unless a local source is supplied.
+Click **Dev** next to **Dev&Debug**, then expand **GaussianSelector**.
+Existing Sort-Free, Core-Tail and RaDe-GS controls remain in their original locations.
+See [GaussianSelector usage](docs/gaussian_selector/usage.md) for ROI, strokes and selection history.
+
+## Getting Started
 ## Getting Started
 
 ### Key and Mouse (as hardcoded in ```inputHandlingDesktop.h```)

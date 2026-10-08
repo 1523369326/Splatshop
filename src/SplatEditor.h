@@ -46,6 +46,9 @@
 
 struct Action;
 struct InputAction;
+#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+class GaussianSelectorRuntime;
+#endif
 
 using glm::transpose;
 using glm::vec2;
@@ -133,6 +136,9 @@ struct SplatEditor{
 
 	vector<shared_ptr<Action>> history;
 	int history_offset = 0;
+	#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+	shared_ptr<GaussianSelectorRuntime> gaussianSelector;
+	#endif
 	
 	vector<GuiVrPage> vrPages = {
 		{
@@ -245,6 +251,7 @@ struct SplatEditor{
 		bool renderWarpwise = false;
 
 		bool showDevStuff = false;
+		bool showDevFeatures = false;
 		bool showEditing = true;
 		bool showKernelInfos = false;
 		bool showMemoryInfos = false;
@@ -329,6 +336,7 @@ struct SplatEditor{
 	bool merge(shared_ptr<SceneNode> snsource, shared_ptr<SceneNode> sntarget); 
 	void applyTransformation(GaussianData& model, mat4 transformation, bool onlySelected = false);
 	void apply(GaussianData& model, ColorCorrection value);
+	void touchGaussianContent(GaussianData& model, bool indicesChanged = false);
 	// void setSelected(GaussianData& model);
 	void setSelectedNode(SceneNode* node);
 	void transformAllSelected(mat4 transform);
@@ -408,6 +416,7 @@ struct SplatEditor{
 	// void makeGuiVr();
 	void makeEditingGUI();
 	void makeDevGUI();
+	void makeDevFeaturesGUI();
 	void makeDebugInfo();
 	void makeAssetGUI();
 	void makeColorCorrectionGui();

@@ -404,6 +404,15 @@ struct GaussianData{
 	Color* color               = nullptr;
 	uint32_t* color_resolved   = nullptr;
 	float* sphericalHarmonics  = nullptr;
+	#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+	// GaussianSelector writes a compact-stage identity sidecar only while an
+	// evidence request is active.  Non-target nodes keep selectorTarget=false
+	// and still participate as occluders.
+	uint32_t selectorSnapshotBase = 0;
+	const uint32_t* selectorLocalToSnapshot = nullptr;
+	bool selectorTarget = false;
+	const uint64_t* selectorPreviewWords = nullptr;
+	#endif
 
 	Cov3DElements* cov3d       = nullptr;
 
@@ -508,6 +517,9 @@ struct DeviceState{
 struct RenderTarget{
 	uint64_t* framebuffer = nullptr;
 	float* measurementDepth = nullptr;
+	#ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
+	uint32_t* selectorStageRows = nullptr;
+	#endif
 	uint64_t* indexbuffer = nullptr;
 	int width;
 	int height;
