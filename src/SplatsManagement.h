@@ -18,7 +18,7 @@ struct GaussianDataManager{
 	shared_ptr<CudaVirtualMemory> vm_depth               = nullptr;
 	shared_ptr<CudaVirtualMemory> vm_flags               = nullptr;
 	shared_ptr<CudaVirtualMemory> vm_sphericalHarmonics  = nullptr;
-	// shared_ptr<CudaVirtualMemory> vm_cov3d         = nullptr;
+	shared_ptr<CudaVirtualMemory> vm_cov3d             = nullptr;
 	// shared_ptr<CudaVirtualMemory> vm_batches       = nullptr;
 
 	GaussianData data;
@@ -33,7 +33,7 @@ struct GaussianDataManager{
 		vm_depth               = CURuntime::allocVirtual(format("[{}] depth",      name)); 
 		vm_flags               = CURuntime::allocVirtual(format("[{}] flags",      name)); 
 		vm_sphericalHarmonics  = CURuntime::allocVirtual(format("[{}] spherical harmonics",name)); 
-		// vm_cov3d      = CURuntime::allocVirtual(format("[{}] cov3d",      name)); 
+		vm_cov3d               = CURuntime::allocVirtual(format("[{}] cov3d", name));
 		// vm_batches    = CURuntime::allocVirtual(format("[{}] batches",    name)); 
 
 		data.position           = (decltype(data.position))    vm_position->cptr;
@@ -44,7 +44,7 @@ struct GaussianDataManager{
 		data.depth              = (decltype(data.depth))       vm_depth->cptr;
 		data.flags              = (decltype(data.flags))       vm_flags->cptr;
 		data.sphericalHarmonics = (decltype(data.sphericalHarmonics))       vm_sphericalHarmonics->cptr;
-		// data.cov3d         = (decltype(data.cov3d))       vm_cov3d->cptr;
+		data.cov3d             = (decltype(data.cov3d)) vm_cov3d->cptr;
 		// data.batches        = (decltype(data.batches))     vm_batches->cptr;
 
 		this->name = name;
@@ -64,7 +64,7 @@ struct GaussianDataManager{
 		CURuntime::free(vm_depth);
 		CURuntime::free(vm_flags);
 		CURuntime::free(vm_sphericalHarmonics);
-		// CURuntime::free(vm_cov3d);
+		CURuntime::free(vm_cov3d);
 		// CURuntime::free(vm_batches);
 
 		vm_position            = nullptr;
@@ -75,7 +75,7 @@ struct GaussianDataManager{
 		vm_depth               = nullptr;
 		vm_flags               = nullptr;
 		vm_sphericalHarmonics  = nullptr;
-		// vm_cov3d          = nullptr;
+		vm_cov3d              = nullptr;
 		// vm_batches        = nullptr;
 
 		data.count = 0;
@@ -91,7 +91,8 @@ struct GaussianDataManager{
 		vm_depth               ->commit(sizeof(*data.depth     ) * numSplats, true);
 		vm_flags               ->commit(sizeof(*data.flags     ) * numSplats, true);
 		vm_sphericalHarmonics  ->commit(data.numSHCoefficients * sizeof(float) * numSplats, true);
-		// vm_cov3d     ->commit(sizeof(*data.cov3d     ) * numSplats, true);
+		// Cov3D is committed lazily by Shared-MultiView. Keeping it virtual here
+		// avoids an extra 24 bytes per Gaussian in the normal single-view path.
 
 		// int numBatches = (numSplats + SPLATLET_SIZE - 1) / SPLATLET_SIZE;
 		// vm_batches   ->commit(sizeof(*data.batches   ) * numBatches, true);
@@ -105,7 +106,7 @@ struct GaussianDataManager{
 		data.depth               = (decltype(data.depth))                vm_depth->cptr;
 		data.flags               = (decltype(data.flags))                vm_flags->cptr;
 		data.sphericalHarmonics  = (decltype(data.sphericalHarmonics))   vm_sphericalHarmonics->cptr;
-		// data.cov3d         = (decltype(data.cov3d))         vm_cov3d->cptr;
+		data.cov3d             = (decltype(data.cov3d)) vm_cov3d->cptr;
 		// data.batches       = (decltype(data.batches))       vm_batches->cptr;
 	}
 
@@ -120,7 +121,7 @@ struct GaussianDataManager{
 		usage += vm_depth->comitted;
 		usage += vm_flags->comitted;
 		usage += vm_sphericalHarmonics->comitted;
-		// usage += vm_cov3d->comitted;
+		usage += vm_cov3d->comitted;
 		// usage += vm_batches->comitted;
 		
 		return usage;

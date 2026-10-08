@@ -221,7 +221,123 @@ void SplatEditor::render(){
 		// 	glMapping.unmap();
 		// }
 
-		if(settings.enableStereoFramebufferTest && settings.enableOverlapped){ 
+		if(settings.multiView){
+			// Four fixed cameras at native quadrant size: each raster target has
+			// one quarter of the desktop framebuffer's pixel count.
+			int leftWidth = max(1, GLRenderer::width / 2);
+			int rightWidth = max(1, GLRenderer::width - leftWidth);
+			int bottomHeight = max(1, GLRenderer::height / 2);
+			int topHeight = max(1, GLRenderer::height - bottomHeight);
+
+			static shared_ptr<CudaVirtualMemory> multiViewBuffers[4] = {
+				CURuntime::allocVirtual("multi-view perspective framebuffer"),
+				CURuntime::allocVirtual("multi-view front framebuffer"),
+				CURuntime::allocVirtual("multi-view top framebuffer"),
+				CURuntime::allocVirtual("multi-view side framebuffer")};
+
+			// Multi-view follows the live desktop orbit camera. This keeps the
+			// Perspective quadrant interactive and keeps all orthographic views
+			// centered and zoomed on the same target.
+			const float radius = max(float(Runtime::controls->radius), 0.01f);
+			const float nearPlane = 0.001f;
+			const float farPlane = max(radius * 6.0f, 10.0f);
+			// Orthographic scale is controlled by radius, but camera placement must
+			// stay far enough away when the Perspective view is zoomed in. Otherwise
+			// the Top camera can move into or below the captured geometry.
+			const float distance = farPlane * 0.5f;
+
+			auto makeOrthoProjection = [&](float aspect){
+				float halfHeight = max(radius * 0.55f, 0.01f);
+				float halfWidth = halfHeight * aspect;
+				mat4 projection(1.0f);
+				projection[0][0] = 1.0f / halfWidth;
+				projection[1][1] = 1.0f / halfHeight;
+				projection[2][2] = -2.0f / (farPlane - nearPlane);
+				projection[3][2] = -(farPlane + nearPlane) / (farPlane - nearPlane);
+				return projection;
+			};
+
+			auto makeTarget = [&](int index, int width, int height, mat4 view, bool orthographic){
+				multiViewBuffers[index]->commit(uint64_t(width) * uint64_t(height) * 8ull);
+				RenderTarget target;
+				target.width = width;
+				target.height = height;
+				target.framebuffer = (uint64_t*)multiViewBuffers[index]->cptr;
+				target.indexbuffer = nullptr;
+				target.view = view;
+				target.projectionMode = orthographic ? PROJECTION_ORTHOGRAPHIC : PROJECTION_PERSPECTIVE;
+				// Resolve directional SH once from the Perspective camera. The fixed
+				// orthographic previews reuse that color in both comparison routes.
+				target.isRight = index != 0;
+				float aspect = float(width) / float(height);
+				if(orthographic){
+					target.proj = makeOrthoProjection(aspect);
+					target.VP = target.proj;
+				}else{
+					float fovy = glm::radians(float(GLRenderer::camera->fovy));
+					target.proj = Camera::createProjectionMatrix(nearPlane, fovy, aspect);
+					target.VP = Camera::createVP(nearPlane, farPlane, fovy, aspect, width, height);
+				}
+				return target;
+			};
+
+			vec3 center = vec3(Runtime::controls->target);
+			vector<RenderTarget> targets;
+			targets.push_back(makeTarget(0, leftWidth, topHeight, mat4(GLRenderer::camera->view), false));
+			targets.push_back(makeTarget(1, rightWidth, topHeight,
+				glm::lookAt(center + vec3(0.0f, distance, 0.0f), center, vec3(0.0f, 0.0f, 1.0f)), true));
+			targets.push_back(makeTarget(2, leftWidth, bottomHeight,
+				glm::lookAt(center + vec3(0.0f, 0.0f, distance), center, vec3(0.0f, 1.0f, 0.0f)), true));
+			targets.push_back(makeTarget(3, rightWidth, bottomHeight,
+				glm::lookAt(center + vec3(distance, 0.0f, 0.0f), center, vec3(0.0f, 0.0f, 1.0f)), true));
+
+			int savedRenderer = settings.splatRenderer;
+			bool savedSoA = settings.renderSoA;
+			bool savedBandwidth = settings.renderBandwidth;
+			bool savedFragIntersections = settings.renderFragIntersections;
+			bool savedRaDe = settings.enableRaDeGeometry;
+			settings.splatRenderer = SPLATRENDERER_3DGS;
+			settings.renderSoA = false;
+			settings.renderBandwidth = false;
+			settings.renderFragIntersections = false;
+			settings.enableRaDeGeometry = false;
+
+			if(settings.multiViewPipeline == 0){
+				// Shared-MultiView: one scene/Gaussian submission feeding four targets.
+				draw(&scene, targets);
+			}else{
+				// Independent: projection, sorting and rasterization are submitted
+				// separately for every camera.
+				auto baseTriangleQueue = triangleQueue;
+				for(auto& target : targets){
+					triangleQueue = baseTriangleQueue;
+					vector<RenderTarget> singleTarget = {target};
+					draw(&scene, singleTarget);
+					target = singleTarget[0];
+				}
+				triangleQueue = baseTriangleQueue;
+			}
+
+			settings.splatRenderer = savedRenderer;
+			settings.renderSoA = savedSoA;
+			settings.renderBandwidth = savedBandwidth;
+			settings.renderFragIntersections = savedFragIntersections;
+			settings.enableRaDeGeometry = savedRaDe;
+
+			Rectangle viewports[4] = {
+				{0.0f, float(bottomHeight), float(leftWidth), float(topHeight)},
+				{float(leftWidth), float(bottomHeight), float(rightWidth), float(topHeight)},
+				{0.0f, 0.0f, float(leftWidth), float(bottomHeight)},
+				{float(leftWidth), 0.0f, float(rightWidth), float(bottomHeight)}};
+			auto glMapping = mapCudaGl(GLRenderer::view.framebuffer->colorAttachments[0]);
+			for(int i = 0; i < 4; i++){
+				prog_gaussians_rendering->launch("kernel_blit_opengl",
+					{&launchArgs, &targets[i], &glMapping.surface, &viewports[i]},
+					int(viewports[i].width * viewports[i].height));
+			}
+			glMapping.unmap();
+
+		}else if(settings.enableStereoFramebufferTest && settings.enableOverlapped){
 			// render to multiple targets concurrently
 			
 			static shared_ptr<CudaVirtualMemory> virt_framebuffer_secondary = CURuntime::allocVirtual("secondary framebuffer (stereo concurrency test)");

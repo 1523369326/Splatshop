@@ -261,6 +261,8 @@ struct SplatEditor{
 		bool renderSoA = false;
 		bool renderBandwidth = false;
 		bool renderFragIntersections = false;
+		bool multiView = false;
+		int multiViewPipeline = 0; // 0: shared submission, 1: four independent submissions
 
 	} settings;
 

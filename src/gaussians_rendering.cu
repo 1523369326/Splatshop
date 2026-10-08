@@ -447,6 +447,31 @@ bool isDebugTile(int x, int y){
 	return x == dbgtile_x && y == dbgtile_y;
 }
 
+// Shared multi-view preprocessing. The object-space covariance is independent
+// of the camera, so build it once and let all four projection stages reuse it.
+extern "C" __global__
+void kernel_buildCov3D(GaussianData model){
+	int splatIndex = cg::this_grid().thread_rank();
+	if(splatIndex >= model.count || model.cov3d == nullptr) return;
+
+	vec4 quat = model.quaternion[splatIndex];
+	mat3 rotation = glm::mat3_cast(glm::quat(quat.x, quat.y, quat.z, quat.w));
+	mat3 scale = mat3(1.0f);
+	scale[0][0] = model.scale[splatIndex].x;
+	scale[1][1] = model.scale[splatIndex].y;
+	scale[2][2] = model.scale[splatIndex].z;
+	mat3 covariance = rotation * scale * scale * transpose(rotation);
+
+	Cov3DElements packed;
+	packed.m11 = covariance[0][0];
+	packed.m12 = covariance[0][1];
+	packed.m13 = covariance[0][2];
+	packed.m22 = covariance[1][1];
+	packed.m23 = covariance[1][2];
+	packed.m33 = covariance[2][2];
+	model.cov3d[splatIndex] = packed;
+}
+
 // stages the model for rasterization, meaning it creates tile fragments for each tile the splat overlaps, and adds it to the staging buffer.
 // Much of the math here is from https://github.com/mkkellogg/GaussianSplats3D
 extern "C" __global__
@@ -495,7 +520,9 @@ void kernel_stageSplats(
 	// if(grid.thread_rank() == 0) printf("%llu\n", uint64_t(model.depth));
 	// if(grid.thread_rank() == 0) printf("%llu\n", uint64_t(model.flags));
 
-	if(ndc.w <= 0.0f) return;
+	float cameraDepth = -viewPos.z;
+	if(target.projectionMode == PROJECTION_PERSPECTIVE && ndc.w <= 0.0f) return;
+	if(target.projectionMode == PROJECTION_ORTHOGRAPHIC && cameraDepth <= 0.0f) return;
 	// Early-Discard gaussians whose position is far outside the frustum 
 	if(ndc.x < -1.5f || ndc.x >  1.5f) return;
 	if(ndc.y < -1.5f || ndc.y >  1.5f) return;
@@ -585,7 +612,16 @@ void kernel_stageSplats(
 	scale[1][1] = model.scale[splatIndex].y;
 	scale[2][2] = model.scale[splatIndex].z;
 
-	mat3 cov3D = rotation * scale * scale * transpose(rotation);
+	mat3 cov3D;
+	if(target.usePrecomputedCov3D && model.cov3d != nullptr){
+		Cov3DElements packed = model.cov3d[splatIndex];
+		cov3D = mat3(
+			packed.m11, packed.m12, packed.m13,
+			packed.m12, packed.m22, packed.m23,
+			packed.m13, packed.m23, packed.m33);
+	}else{
+		cov3D = rotation * scale * scale * transpose(rotation);
+	}
 
 	// RaDe-GS: build the ray-space plane once per Gaussian.  The standard
 	// renderer below evaluates this plane for every Gaussian-pixel pair.
@@ -678,12 +714,21 @@ void kernel_stageSplats(
 		proj[0][0] * target.width * 0.5f,
 		proj[1][1] * target.height * 0.5f
 	);
+	mat3 J;
+	if(target.projectionMode == PROJECTION_ORTHOGRAPHIC){
+		// Constant orthographic Jacobian. With axis-aligned front/top/side
+		// cameras this reduces to selecting the corresponding Cov3D components.
+		J = mat3(
+			focal.x, 0.0f, 0.0f,
+			0.0f, focal.y, 0.0f,
+			0.0f, 0.0f, 0.0f);
+	}else{
 	float s = 1.0f / (viewPos.z * viewPos.z);
-	mat3 J = mat3(
+		J = mat3(
 		focal.x / viewPos.z   , 0.0f                  , -(focal.x * viewPos.x) * s,
 		0.0f                  , focal.y / viewPos.z   , -(focal.y * viewPos.y) * s,
-		0.0f                  , 0.0f                  , 0.0f
-	);
+			0.0f, 0.0f, 0.0f);
+	}
 
 	mat3 W = transpose(mat3(worldView));
 	mat3 T = W * J;
@@ -753,7 +798,7 @@ void kernel_stageSplats(
 		if(color.a < 0.2f) return;
 	}
 
-	float depth = ndc.w;
+	float depth = target.projectionMode == PROJECTION_ORTHOGRAPHIC ? cameraDepth : ndc.w;
 	vec2 _pixelCoord = {
 		((ndc.x) * 0.5f + 0.5f) * target.width,
 		((ndc.y) * 0.5f + 0.5f) * target.height

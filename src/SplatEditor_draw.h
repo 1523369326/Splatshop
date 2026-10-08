@@ -365,6 +365,30 @@ void drawsplats_3dgs_concurrent(
 		cuEventRecord(event_start, targets[0].mainstream);
 	}
 
+	const bool sharedMultiView = settings.multiView &&
+		settings.multiViewPipeline == 0 && targets.size() == 4;
+
+	// The Gaussian input is already SoA. Build the camera-independent Cov3D
+	// once, then let the four projection stages reuse it.
+	if(sharedMultiView){
+		scene->process<SNSplats>([&](SNSplats* node){
+			if(!node->visible || node->dmng.data.count == 0) return;
+			node->dmng.vm_cov3d->commit(
+				sizeof(Cov3DElements) * uint64_t(node->dmng.data.count), true);
+			node->dmng.data.cov3d =
+				(Cov3DElements*)node->dmng.vm_cov3d->cptr;
+			editor->prog_gaussians_rendering->launch(
+				"kernel_buildCov3D", {&node->dmng.data},
+				node->dmng.data.count, targets[0].mainstream);
+		});
+		cuStreamSynchronize(targets[0].mainstream);
+	}
+
+	for(auto& target : targets){
+		if(!sharedMultiView) continue;
+		target.target.usePrecomputedCov3D = true;
+	}
+
 	// staging of splats needs a lot of memory, 
 	// so we still do this part sequentially, one target after the other
 	for(auto& target : targets){
@@ -413,6 +437,10 @@ void drawsplats_3dgs_concurrent(
 			};
 			editor->prog_gaussians_rendering->launch("kernel_stageSplats", args, data.count, target.mainstream);
 		});
+		if(sharedMultiView && !target.target.isRight){
+			// Perspective owns the single SH-to-RGB resolve used by all views.
+			cuStreamSynchronize(target.mainstream);
+		}
 
 		
 

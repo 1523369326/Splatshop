@@ -670,6 +670,31 @@ void SplatEditor::makeToolbar(){
 			endSection();
 		}
 
+		{ // MULTI-VIEW
+			startSection("Multi-view");
+
+			startHighlightButtonIf(settings.multiView);
+			if(ImGui::Button("Multi-view")){
+				settings.multiView = !settings.multiView;
+			}
+			endHighlightButtonIf();
+			if(ImGui::IsItemHovered()){
+				ImGui::SetTooltip("Toggle the fixed four-camera preview.\nPerspective | Front\nTop | Side");
+			}
+
+			ImGui::RadioButton("Shared-MultiView##multiview", &settings.multiViewPipeline, 0);
+			if(ImGui::IsItemHovered()){
+				ImGui::SetTooltip("One Gaussian submission; camera-independent Cov3D and resolved colors are shared across views.");
+			}
+			ImGui::SameLine();
+			ImGui::RadioButton("Independent##multiview", &settings.multiViewPipeline, 1);
+			if(ImGui::IsItemHovered()){
+				ImGui::SetTooltip("Independent runs projection, sorting and rasterization four times.");
+			}
+
+			endSection();
+		}
+
 		{ // APPEARANCE
 			startSection("Appearance");
 
@@ -901,6 +926,27 @@ void SplatEditor::makeToolbar(){
 
 
 	ImGui::End();
+
+	if(settings.multiView){
+		ImDrawList* overlay = ImGui::GetForegroundDrawList();
+		float halfWidth = float(GLRenderer::width) * 0.5f;
+		float halfHeight = float(GLRenderer::height) * 0.5f;
+		ImU32 divider = IM_COL32(255, 255, 255, 110);
+		overlay->AddLine({halfWidth, 0.0f}, {halfWidth, float(GLRenderer::height)}, divider, 1.0f);
+		overlay->AddLine({0.0f, halfHeight}, {float(GLRenderer::width), halfHeight}, divider, 1.0f);
+
+		auto addViewLabel = [&](const char* label, ImVec2 pos){
+			ImVec2 size = ImGui::CalcTextSize(label);
+			overlay->AddRectFilled({pos.x - 4.0f, pos.y - 2.0f},
+				{pos.x + size.x + 4.0f, pos.y + size.y + 2.0f}, IM_COL32(0, 0, 0, 150), 3.0f);
+			overlay->AddText(pos, IM_COL32(255, 255, 255, 235), label);
+		};
+		float top = toolbar_end.y + 8.0f;
+		addViewLabel("Perspective", {8.0f, top});
+		addViewLabel("Front (Ortho)", {halfWidth + 8.0f, top});
+		addViewLabel("Top (Ortho)", {8.0f, halfHeight + 8.0f});
+		addViewLabel("Side (Ortho)", {halfWidth + 8.0f, halfHeight + 8.0f});
+	}
 
 	{ // TOOLBAR SECTION LABELS 
 		uint32_t flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar;

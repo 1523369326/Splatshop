@@ -65,6 +65,9 @@ constexpr float SORTFREE_DEPTH_WEIGHT_SIGMA = 0.02f;
 constexpr float SORTFREE_DEPTH_WEIGHT_BETA = 1.0f;
 constexpr uint32_t SORTFREE_INVALID_FRAGMENT = 0xffffffffu;
 
+constexpr int PROJECTION_PERSPECTIVE = 0;
+constexpr int PROJECTION_ORTHOGRAPHIC = 1;
+
 constexpr uint32_t FLAGS_SELECTED             = 1 <<  0;
 constexpr uint32_t FLAGS_HIGHLIGHTED          = 1 <<  1;
 constexpr uint32_t FLAGS_HIGHLIGHTED_NEGATIVE = 1 <<  2;
@@ -511,6 +514,8 @@ struct RenderTarget{
 	mat4 view;
 	mat4 proj;
 	mat4 VP;
+	int projectionMode = PROJECTION_PERSPECTIVE;
+	bool usePrecomputedCov3D = false;
 	bool isLeft = false;
 	bool isRight = false;
 };
