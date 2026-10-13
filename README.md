@@ -23,7 +23,34 @@ A precompiled windows binary is available [here](http://users.cg.tuwien.ac.at/ms
 	<li> No pip or conda issues! (no Python)
 	<li> CUDA Driver API - Can edit and hot-reload CUDA code like shaders.
 	<li> Includes support for <a href="https://github.com/nerficg-project/HTGS">perspective-correct gaussians</a>. (Splat models need to be trained with respective method)
+	<li> Viewer-side reproductions of Sort-Free weighted-sum rendering, Core-Tail hybrid transparency, and RaDe-GS geometry rendering.
+	<li> Two-point measurement with four configurable depth-picking methods, including multi-surface CDF/PDF peak selection.
 </ul>
+
+### Research Reproductions and Experimental Rendering
+
+This fork includes viewer-side reproductions and adaptations of several Gaussian-splatting papers. These implementations focus on interactive inference and visualization inside Splatshop; they do not reproduce the papers' complete training pipelines, loss functions, or benchmark results.
+
+| Feature | Reference | Implementation in Splatshop | How to enable |
+|---|---|---|---|
+| **Sort-Free** | [Sort-Free Gaussian Splatting via Weighted Sum Rendering](https://arxiv.org/abs/2410.18931) (ICLR 2025) | Bypasses depth/fragment sorting and uses exponential depth-weighted sum rendering. The current viewer uses fixed weighting parameters and can be used to compare sort-free rendering on loaded models; reproducing the paper's full quality also requires its training procedure and learned view-dependent opacity. | In **Appearance**, select **Splat Renderer -> Sort-free**. |
+| **Core-Tail** | [Efficient Perspective-Correct 3D Gaussian Splatting Using Hybrid Transparency](https://fhahlbohm.github.io/htgs/) (Eurographics 2025) | Reproduces the hybrid-transparency blending component on the regular 3DGS path: the first `K` sufficiently opaque fragments form an exactly alpha-blended core, while the remaining fragments are accumulated in an order-independent tail. | Select **Splat Renderer -> 3DGS**, then **Core-Tail**. Adjust **Core K**, **Core alpha cutoff**, and **Core blend opacity** in the controls. |
+| **RaDe-GS Geometry** | [RaDe-GS: Rasterizing Depth in Gaussian Splatting](https://arxiv.org/abs/2406.01467) | Reproduces the ray-plane geometry evaluation used to obtain alpha-composited expected depth and camera-space normals from ordinary 3D Gaussians. | Enable **RaDe-GS geometry** in **Appearance**, open **Controls**, then choose **Color**, **Expected depth**, or **Camera-space normal**. |
+
+The experimental renderers are selectable at runtime and CUDA kernels are compiled when the application starts. Some combinations use different intermediate data layouts, so enabling **RaDe-GS geometry** intentionally switches rendering to the compatible staged 3DGS path.
+
+### Two-Point Measurement and Depth Picking
+
+Click **Measure** in the toolbar, choose a depth-picking method, and press **Start measurement**. Pick two locations to display their Euclidean distance in world units. Measurements remain visible as an overlay and can be removed individually.
+
+| Depth method | Description | Typical use |
+|---|---|---|
+| **First transmittance crossing** | Selects the first Gaussian after accumulated transmittance falls below the configurable `T` threshold. | Stable front-surface picking with an adjustable opacity threshold. |
+| **Weighted expected depth** | Computes depth from alpha-contribution-weighted samples along the pixel ray. | Smooth depth estimates on opaque or softly blended surfaces. |
+| **Maximum-weight Gaussian depth** | Uses the depth of the Gaussian with the largest alpha contribution. | Picking the dominant local surface without averaging foreground and background depths. |
+| **CDF/PDF multi-surface depth** | Builds a per-ray depth distribution, smooths its PDF, detects multiple peaks, and lets the user select or drag to the intended surface before accepting each endpoint. This reproduces the multi-modal depth-distribution and peak-selection idea from [TSPE-GS: Probabilistic Depth Extraction for Semi-Transparent Surface Reconstruction via 3D Gaussian Splatting](https://arxiv.org/abs/2511.09944), adapted here for interactive measurement rather than the paper's full surface-reconstruction pipeline. | Disambiguating multiple visible surfaces, including geometry behind glass or other semi-transparent regions. |
+
+For CDF/PDF picking, click a ray and wait for its GPU samples. The selector shows the PDF in yellow, CDF in blue, detected peaks in orange, and the selected depth in green. Choose a detected peak or drag the green marker, accept the point, and repeat for the second endpoint.
 
 ### Known Issues
 <ul>
@@ -117,7 +144,6 @@ Click **Dev** next to **Dev&Debug**, then expand **GaussianSelector**.
 Existing Sort-Free, Core-Tail and RaDe-GS controls remain in their original locations.
 See [GaussianSelector usage](docs/gaussian_selector/usage.md) for ROI, strokes and selection history.
 
-## Getting Started
 ## Getting Started
 
 ### Key and Mouse (as hardcoded in ```inputHandlingDesktop.h```)

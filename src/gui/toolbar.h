@@ -462,6 +462,7 @@ void SplatEditor::makeToolbar(){
 					ImGui::EndPopup();
 				}
 			}
+
 			endSection();
 		}
 
@@ -948,7 +949,7 @@ void SplatEditor::makeToolbar(){
 		addViewLabel("Side (Ortho)", {halfWidth + 8.0f, halfHeight + 8.0f});
 	}
 
-	{ // TOOLBAR SECTION LABELS 
+	{ // TOOLBAR SECTION LABELS
 		uint32_t flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar;
 		ImGui::Begin("Toolbar", nullptr, flags);
 
