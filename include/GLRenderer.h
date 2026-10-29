@@ -323,7 +323,7 @@ struct GLRenderer{
 		return target;
 	}
 
-	static void loop(function<void(void)> update, function<void(void)> render);
+	static void loop(function<void(void)> update, function<void(void)> render, function<void(void)> shutdown = {});
 
 	inline static void onFileDrop(function<void(vector<string>)> callback){
 		GLRenderer::fileDropListeners.push_back(callback);

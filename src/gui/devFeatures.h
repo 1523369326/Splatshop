@@ -16,6 +16,14 @@ void SplatEditor::makeDevFeaturesGUI() {
 		return;
 	}
 	ImGui::TextWrapped("Research reproductions and practical tools");
+	if(ImGui::TreeNodeEx("Camera Studio", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::TextWrapped("Camera paths, pose editing, independent preview and video recording.");
+		if(ImGui::Button("Open Camera Studio")) {
+			cameraStudio->open(*this);
+			if(cameraStudio->isOpen()) settings.showDevFeatures = false;
+		}
+		ImGui::TreePop();
+	}
 	if(ImGui::TreeNodeEx("GaussianSelector", ImGuiTreeNodeFlags_DefaultOpen)) {
 #ifdef SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR
 		auto action=std::dynamic_pointer_cast<GaussianSelectorAction>(editor->state.currentAction);

@@ -46,6 +46,10 @@ endif (WIN32)
 
 add_executable(${TARGET_NAME} ${SplatEditor_SOURCES})
 
+if(MSVC)
+	target_compile_options(${TARGET_NAME} PRIVATE /utf-8)
+endif()
+
 if(SPLATSHOP_ENABLE_GAUSSIAN_SELECTOR OR SPLATSHOP_BUILD_GAUSSIAN_SELECTOR_TESTS)
 	include(cmake/gaussian_selector.cmake)
 endif()

@@ -22,6 +22,8 @@ void SplatEditor::setAction(shared_ptr<InputAction> action){
 }
 
 void SplatEditor::inputHandlingDesktop(){
+	// 相机轨迹操作优先消费输入，避免同时移动场景或触发选择工具。
+	if(cameraStudio->handleDesktopInput(*this)) return;
 
 	auto editor = SplatEditor::instance;
 	auto& settings = editor->settings;

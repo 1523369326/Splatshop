@@ -527,6 +527,8 @@ struct RenderTarget{
 	mat4 proj;
 	mat4 VP;
 	int projectionMode = PROJECTION_PERSPECTIVE;
+	// 预览独立求 SH 颜色并隐藏编辑高亮，不改写主视图缓存。
+	bool cameraPreview = false;
 	bool usePrecomputedCov3D = false;
 	bool isLeft = false;
 	bool isRight = false;

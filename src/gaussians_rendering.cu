@@ -532,7 +532,7 @@ void kernel_stageSplats(
 	// WIP: SHs not yet robust under model and splat transformations
 	constexpr int updateOverXFrames = 10;
 	// if(false)
-	if(splatIndex % updateOverXFrames == args.uniforms.frameCount % updateOverXFrames)
+	if(target.cameraPreview || splatIndex % updateOverXFrames == args.uniforms.frameCount % updateOverXFrames)
 	if(!target.isRight)
 	if(model.shDegree > 0 ){
 		// if(splatIndex == 0) printf("model.numSHCoefficients: %d \n", model.numSHCoefficients);
@@ -579,12 +579,13 @@ void kernel_stageSplats(
 			(uint32_t(clamp(256.0f * colBaked.g, 0.0f, 255.0f)) <<  8) |
 			(uint32_t(clamp(256.0f * colBaked.b, 0.0f, 255.0f)) << 16) |
 			(uint32_t(clamp(256.0f * colBaked.a, 0.0f, 255.0f)) << 24);
-		model.color_resolved[splatIndex] = C;
+		if(target.cameraPreview) color = colBaked;
+		else model.color_resolved[splatIndex] = C;
 
 		// color = colBaked;
 	}
 
-	if(model.shDegree > 0 )
+	if(model.shDegree > 0 && !target.cameraPreview)
 	{
 		uint32_t C = model.color_resolved[splatIndex];
 
@@ -837,6 +838,7 @@ void kernel_stageSplats(
 	color = applyColorCorrection(color, colorCorrection);
 
 	uint32_t flags = model.flags[splatIndex];
+	if(target.cameraPreview) flags &= ~(FLAGS_SELECTED | FLAGS_HIGHLIGHTED | FLAGS_HIGHLIGHTED_NEGATIVE);
 
 	{ // HANDLE FLAGS
 
@@ -975,7 +977,7 @@ void kernel_stageSplats_perspectivecorrect(
 
 	// WIP: SHs not yet robust under model and splat transformations
 	constexpr int updateOverXFrames = 10;
-	if (splatIndex % updateOverXFrames == args.uniforms.frameCount % updateOverXFrames)
+	if (target.cameraPreview || splatIndex % updateOverXFrames == args.uniforms.frameCount % updateOverXFrames)
 	if (model.shDegree > 0) {
 		int64_t offset = splatIndex * model.numSHCoefficients;
 		vec3* shs = (vec3*)(model.sphericalHarmonics + offset);
@@ -993,10 +995,11 @@ void kernel_stageSplats_perspectivecorrect(
 			(uint32_t(clamp(256.0f * colBaked.g, 0.0f, 255.0f)) <<  8) |
 			(uint32_t(clamp(256.0f * colBaked.b, 0.0f, 255.0f)) << 16) |
 			(uint32_t(clamp(256.0f * colBaked.a, 0.0f, 255.0f)) << 24);
-		model.color_resolved[splatIndex] = C;
+		if(target.cameraPreview) color = colBaked;
+		else model.color_resolved[splatIndex] = C;
 	}
 
-	if (model.shDegree > 0) {
+	if (model.shDegree > 0 && !target.cameraPreview) {
 		uint32_t C = model.color_resolved[splatIndex];
 		color.r = float((C >>  0) & 0xff) / 256.0f;
 		color.g = float((C >>  8) & 0xff) / 256.0f;
@@ -1063,6 +1066,7 @@ void kernel_stageSplats_perspectivecorrect(
 	color = applyColorCorrection(color, colorCorrection);
 
 	uint32_t flags = model.flags[splatIndex];
+	if(target.cameraPreview) flags &= ~(FLAGS_SELECTED | FLAGS_HIGHLIGHTED | FLAGS_HIGHLIGHTED_NEGATIVE);
 
 	{ // HANDLE FLAGS
 

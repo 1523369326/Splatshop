@@ -414,7 +414,8 @@ int main(){
 
 	GLRenderer::loop(
 		[&]() {editor->update();},
-		[&]() {editor->render();}
+		[&]() {editor->render();},
+		[&]() {editor->cameraStudio->close();}
 	);
 
 	return 0;

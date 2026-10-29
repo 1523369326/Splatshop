@@ -253,7 +253,7 @@ shared_ptr<Framebuffer> GLRenderer::createFramebuffer(int width, int height) {
 	return framebuffer;
 }
 
-void GLRenderer::loop(function<void(void)> update, function<void(void)> render){
+void GLRenderer::loop(function<void(void)> update, function<void(void)> render, function<void(void)> shutdown){
 
 	int fpsCounter = 0;
 	double start = now();
@@ -349,6 +349,9 @@ void GLRenderer::loop(function<void(void)> update, function<void(void)> render){
 		fpsCounter++;
 		frameCount++;
 	}
+
+	// 关闭上下文前完成录制文件的索引和帧数回填。
+	if(shutdown) shutdown();
 
 	glfwDestroyWindow(window);
 	glfwTerminate();

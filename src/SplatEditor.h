@@ -27,6 +27,7 @@
 
 #include "common.h"
 #include "AssetLibrary.h"
+#include "CameraStudio.h"
 
 #include "loader/GSPlyLoader.h"
 #include "loader/SplatsyFilesLoader.h"
@@ -185,6 +186,7 @@ struct SplatEditor{
 	vector<TriangleQueueItem> triangleQueue;
 
 	AssetLibrary assetLibrary;
+	std::shared_ptr<CameraStudio> cameraStudio = std::make_shared<CameraStudio>();
 
 	// This is prepared at the start of the frame and provides most properties for CUDA kernels
 	CommonLaunchArgs launchArgs;

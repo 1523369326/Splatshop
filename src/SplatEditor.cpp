@@ -1772,6 +1772,7 @@ void SplatEditor::drawGUI() {
 		makeMeasurementOverlay();
 		makeDevGUI();
 		makeDevFeaturesGUI();
+		cameraStudio->drawGui(*this);
 		makeEditingGUI();
 		makeColorCorrectionGui();
 		makeStats();

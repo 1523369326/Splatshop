@@ -144,6 +144,20 @@ Click **Dev** next to **Dev&Debug**, then expand **GaussianSelector**.
 Existing Sort-Free, Core-Tail and RaDe-GS controls remain in their original locations.
 See [GaussianSelector usage](docs/gaussian_selector/usage.md) for ROI, strokes and selection history.
 
+### Camera Studio
+
+Open **Dev -> Camera Studio -> Open Camera Studio**. Two in-app panels appear: **Camera Trajectory** and **Camera Preview**; the existing main viewport remains the scene overview.
+
+- **Create a path:** capture the current main view, insert cameras after the selection, click to add cameras on an XY/XZ/YZ plane, draw a stroke, or generate an orbit. The drawing canvas uses a sampled scene map; **Refresh map** updates it after scene changes. Middle drag pans the map and the mouse wheel zooms it.
+- **Adjust cameras:** select a numbered marker in the map, list, or main scene. Drag map markers to change position, use the main scene's move/rotate gizmo (**T/R**), or edit position, rotation, vertical FOV, and segment duration numerically. Drag the selected camera preview to adjust its aim. **Edit selected in main view** switches the existing viewport to that camera: left drag aims, right drag pans, wheel/WASD move, and Q/E move vertically; **Back to overview** restores the overview camera.
+- **Play:** use **Play path**, pause/stop, scrub the timeline, adjust speed, or repeat playback. **Follow path in main view** optionally drives the main camera; otherwise playback stays in the independent preview. Paths support centripetal Catmull-Rom position smoothing, quaternion rotation interpolation, and closed loops.
+- **Save:** camera paths and output settings are saved to a separate JSON file, with path-specific undo/redo. This file is independent of the scene file.
+- **Record:** **Record whole path** writes a silent **AVI/MJPEG** video using the existing JPEG encoder. Set resolution, FPS, quality, and output filename; frames advance deterministically even when rendering is slower than the chosen FPS. UI, trajectory markers, grid/axes, and Gaussian edit highlights are excluded. **Stop recording** finalizes the frames already written. Existing videos are protected unless overwrite is enabled; AVI recording stops before the single-file size limit.
+
+Camera Studio uses the single desktop viewport. Opening it switches off Four Views and Stereo Framebuffer Test. Preview/video reuse the staged renderer (3DGS, Sort-Free, Core-Tail, perspective-correct, and RaDe-GS settings); the optional SoA/Bandwidth/Fragment Intersection layouts remain confined to the main viewport. Preview evaluates camera-dependent SH colors separately from the main camera's cache.
+
+The feature adds no plugin, native window, or encoding program. Reconfigure CMake after adding the source files, then build as usual. New code comments are in concise Chinese.
+
 ## Getting Started
 
 ### Key and Mouse (as hardcoded in ```inputHandlingDesktop.h```)

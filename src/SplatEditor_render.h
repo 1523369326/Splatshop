@@ -534,6 +534,7 @@ void SplatEditor::render(){
 	}
 
 	cuCtxSynchronize();
+	cameraStudio->render(*this);
 	CudaModularProgram::resolveTimings();
 	
 	// DRAW GUI
